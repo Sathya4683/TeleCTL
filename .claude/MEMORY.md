@@ -1,0 +1,5 @@
+- [Architecture](architecture.md) — high-level decisions: sync/async policy, package layout, AWS service choices
+- [Conventions](conventions.md) — import order, no-HTTP-in-commands, logging, error handling
+- [Repository structure](repo-structure.md) — folder tour, what lives where
+- [Adding commands / integrations](commands.md) — recipes for the plugin system
+- [Test mock patterns](test-mock-patterns.md) — where to monkeypatch for command tests

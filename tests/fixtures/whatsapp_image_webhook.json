@@ -1,0 +1,40 @@
+{
+  "object": "whatsapp_business_account",
+  "entry": [
+    {
+      "id": "102290129340398",
+      "changes": [
+        {
+          "field": "messages",
+          "value": {
+            "messaging_product": "whatsapp",
+            "metadata": {
+              "display_phone_number": "15550783881",
+              "phone_number_id": "106540352242922"
+            },
+            "contacts": [
+              {
+                "profile": { "name": "Sheena Nelson" },
+                "wa_id": "16505551234"
+              }
+            ],
+            "messages": [
+              {
+                "from": "16505551234",
+                "id": "wamid.IMG_MESSAGE_ID_AAA",
+                "timestamp": "1749416400",
+                "type": "image",
+                "image": {
+                  "mime_type": "image/jpeg",
+                  "sha256": "abcdef0123456789",
+                  "id": "MEDIA_ID_AAA",
+                  "caption": "Make this smaller please"
+                }
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

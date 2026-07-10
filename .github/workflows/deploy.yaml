@@ -1,0 +1,111 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      env:
+        description: "Deployment environment"
+        required: true
+        default: dev
+        type: choice
+        options:
+          - dev
+          - staging
+          - prod
+
+concurrency:
+  group: deploy-${{ github.event.inputs.env || 'dev' }}
+  cancel-in-progress: false
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  build-and-publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        run: pip install --upgrade pip uv
+
+      - name: Sync deps
+        run: uv sync --frozen
+
+      - name: Build Lambda zip
+        run: |
+          set -euo pipefail
+          rm -rf build/lambda packages
+          mkdir -p build/lambda
+          uv export --frozen --no-hashes --format requirements-txt > /tmp/requirements.txt
+          uv pip install \
+            --python "$(which python)" \
+            --target build/lambda/packages \
+            --no-cache --no-compile-bytecode \
+            -r /tmp/requirements.txt
+          cp -r src/wactl build/lambda/packages/wactl
+          (cd build/lambda/packages && zip -qr ../../lambda.zip .)
+          (cd build/lambda && zip -qr ../lambda.zip lambda)
+          echo "Built $(ls -lh build/lambda.zip)"
+
+      - name: Build worker tarball
+        run: bash worker/build.sh
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/${{ github.event.inputs.env || 'dev' }}-gha-deploy
+          aws-region: us-east-1
+
+      - name: Upload Lambda zip to S3
+        run: |
+          aws s3 cp build/lambda.zip \
+            s3://${{ github.event.inputs.env || 'dev' }}-releases-${{ secrets.AWS_ACCOUNT_ID }}/lambda.zip
+
+      - name: Upload worker tarball to S3
+        run: |
+          aws s3 cp dist/worker.tar.gz \
+            s3://${{ github.event.inputs.env || 'dev' }}-releases-${{ secrets.AWS_ACCOUNT_ID }}/worker.tar.gz
+
+  terraform-apply:
+    needs: build-and-publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.10.0
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/${{ github.event.inputs.env || 'dev' }}-gha-deploy
+          aws-region: us-east-1
+
+      - name: terraform init
+        working-directory: infra
+        run: |
+          terraform init \
+            -backend-config="bucket=wactl-tf-state-${{ secrets.AWS_ACCOUNT_ID }}" \
+            -backend-config="region=us-east-1"
+
+      - name: terraform apply
+        working-directory: infra
+        run: |
+          terraform apply \
+            -var env=${{ github.event.inputs.env || 'dev' }} \
+            -auto-approve

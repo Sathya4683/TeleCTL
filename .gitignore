@@ -1,0 +1,51 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual Environment
+.venv/
+
+# Environment Variables
+.env
+.env.*
+!.env.example
+
+# UV
+.python-version
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Type Checking
+.mypy_cache/
+.pyre/
+.pytype/
+
+# Ruff
+.ruff_cache/
+
+# IDE
+.vscode/
+.idea/
+
+# macOS / Linux
+.DS_Store
+
+# Serverless
+.serverless/
+
+# Logs
+*.log
+logs/
+
+# Build Artifacts
+dist/
+build/
+*.egg-info/
+
+# Temporary Files
+tmp/
+temp/
