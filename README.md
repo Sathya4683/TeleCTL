@@ -220,7 +220,7 @@ erDiagram
 
     SQS_MESSAGE {
         string handle "_receipt_handle"
-        string body "Job JSON (command + user + media_id)"
+        string body "Job JSON (command, user, media_id)"
     }
 
     S3_OBJECT {
@@ -233,9 +233,9 @@ erDiagram
         string name "wactl/whatsapp/access-token"
     }
 
-    SQS_MESSAGE ||..|| DEDUP : same wamid blocks re-dispatch
+    SQS_MESSAGE ||..|| DEDUP : same wamid blocks redispatch
     SQS_MESSAGE ||..|| S3_OBJECT : media downloaded by worker
-    SECRET ||..o{ SQS_MESSAGE : bearer + app secret read at startup
+    SECRET ||..o{ SQS_MESSAGE : bearer and app secret read at startup
 ```
 
 S3 lifecycle drops objects after 24 hours. DynamoDB TTL drops dedup rows after 7 days (matching Meta's retry window).
