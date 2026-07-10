@@ -4,7 +4,7 @@
 # /opt/wactl/. Keeping a Dockerfile (rather than just a bash script) makes
 # the contract transparent and inspectable in CI.
 
-FROM python:3.12-slim AS builder
+FROM python:3.14-slim AS builder
 
 ENV PIP_DISABLE_PIP_VERSION_CHECK=1 \
     PIP_NO_CACHE_DIR=1 \
