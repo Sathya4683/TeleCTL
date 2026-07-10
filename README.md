@@ -213,7 +213,7 @@ Visibility timeout is 15 min: a job that the worker fails to ack in that window 
 ```mermaid
 erDiagram
     DEDUP {
-        string pk "wamid.HkAD..."
+        string wamid "primary key, e.g. wamid.HkAD..."
         int expires_at "TTL 7 days"
         string source "whatsapp"
     }
