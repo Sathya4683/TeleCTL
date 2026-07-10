@@ -1,0 +1,71 @@
+# .dockerignore — keep the worker build context small. The worker
+# Dockerfile (`worker/Dockerfile`) builds from the repo root, so we
+# exclude everything that isn't needed to compile the release tarball.
+
+# Git + GitHub metadata
+.git/
+.gitattributes
+.github/
+
+# Virtual envs (we re-install inside the builder stage)
+.venv/
+venv/
+env/
+
+# Python caches + tooling state
+__pycache__/
+*.py[cod]
+*$py.class
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Test + dev artefacts
+tests/
+.pytest.ini
+.tox/
+.coverage*
+
+# Build outputs (we produce dist/ inside the container)
+dist/
+build/
+*.egg-info/
+*.whl
+*.tar.gz
+*.zip
+
+# Frontend (the worker doesn't need it)
+web/
+node_modules/
+
+# Docs, examples, design assets
+docs/
+README.md
+*.md
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.svg
+
+# Editor + OS junk
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Secrets — never let them into the build context
+.env
+.env.*
+*.pem
+*.key
+secrets/
+
+# Local AWS / Terraform state
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+.terraform.lock.hcl.bak

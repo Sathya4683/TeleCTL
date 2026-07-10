@@ -1,0 +1,12 @@
+# Marks this repo as accepting only the two structured templates above.
+# Users who click "Open issue" without selecting a template will be
+# redirected here.
+
+blank_issues_enabled: false
+contact_links:
+  - name: Questions / how-to
+    url: https://github.com/sathya-narayanan/wactl/discussions
+    about: Use Discussions for usage questions. Reserve issues for bugs and feature requests.
+  - name: Security policy
+    url: https://github.com/sathya-narayanan/wactl/blob/main/SECURITY.md
+    about: Vulnerability disclosures go to security@wactl.example — not public issues.

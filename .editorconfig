@@ -1,0 +1,35 @@
+# EditorConfig — https://editorconfig.org
+# Tells editors to use consistent whitespace, line endings, and final
+# newlines. Most editors (VS Code, JetBrains, vim, emacs) honor this
+# out of the box or with a plugin.
+
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+indent_style = space
+indent_size = 4
+insert_final_newline = true
+trim_trailing_whitespace = true
+
+[*.{py,pyi}]
+indent_size = 4
+max_line_length = 100
+
+[*.{ts,tsx,js,jsx,mjs,cjs}]
+indent_size = 2
+
+[*.{tf,tfvars,hcl}]
+indent_size = 2
+
+[*.{yaml,yml}]
+indent_size = 2
+
+[*.md]
+trim_trailing_whitespace = false
+# Markdown renders trailing whitespace as meaningful (line breaks);
+# don't strip it.
+
+[Makefile]
+indent_style = tab

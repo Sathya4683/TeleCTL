@@ -1,0 +1,109 @@
+# Dependabot configuration — https://docs.github.com/en/code-security/dependabot
+#
+# Cadence: every Monday at 04:13 UTC. Non-:00 minute so we're not in the
+# global "everyone's bot fires simultaneously" pile-up.
+#
+# Five ecosystems are tracked — pick whichever your changes touch:
+#   • pip          → pyproject.toml + uv.lock
+#   • npm          → web/package.json + web/package-lock.json
+#   • terraform    → infra/*.tf (provider + modules)
+#   • docker       → worker/Dockerfile (base image bumps)
+#   • github-actions → .github/workflows/*.yaml (action version bumps)
+#
+# Each ecosystem has its own update PR per week thanks to grouping
+# (production vs development, and a dedicated group for actions).
+#
+# Auto-merge:
+#   Auto-merge is a REPO-level setting (Settings → Code security and
+#   analysis → Dependabot → "Allow auto-merge"). We don't configure it
+#   here on purpose — turn it on when you trust the test suite.
+
+version: 2
+
+updates:
+  # ─── Python (uv / pip) ─────────────────────────────────────────────
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "04:13"
+      timezone: "UTC"
+    groups:
+      production:
+        dependency-type: "production"
+      development:
+        dependency-type: "development"
+    labels:
+      - "dependencies"
+      - "python"
+    open-pull-requests-limit: 5
+    # "increase" widens the version range in pyproject.toml AND updates
+    # uv.lock (matches `uv add <pkg>@latest` semantics).
+    # Switch to "lockfile" if you want pure `uv lock --upgrade` updates
+    # with no bound changes.
+    versioning-strategy: increase
+    # Don't open a PR for our own packages.
+    ignore:
+      - dependency-name: "wactl*"
+
+  # ─── Node / Next.js ────────────────────────────────────────────────
+  - package-ecosystem: "npm"
+    directory: "/web"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "04:18"
+      timezone: "UTC"
+    groups:
+      production:
+        dependency-type: "production"
+      development:
+        dependency-type: "development"
+    labels:
+      - "dependencies"
+      - "frontend"
+    open-pull-requests-limit: 5
+
+  # ─── Terraform providers + modules ────────────────────────────────
+  - package-ecosystem: "terraform"
+    directory: "/infra"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "04:23"
+      timezone: "UTC"
+    labels:
+      - "dependencies"
+      - "infra"
+    open-pull-requests-limit: 5
+
+  # ─── Worker Dockerfile (base image bumps) ─────────────────────────
+  - package-ecosystem: "docker"
+    directory: "/worker"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "04:28"
+      timezone: "UTC"
+    labels:
+      - "dependencies"
+      - "worker"
+    open-pull-requests-limit: 3
+
+  # ─── GitHub Actions versions ───────────────────────────────────────
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "04:33"
+      timezone: "UTC"
+    groups:
+      actions:
+        patterns:
+          - "*"
+    labels:
+      - "dependencies"
+      - "ci"
+    open-pull-requests-limit: 5

@@ -1,0 +1,56 @@
+# .gitattributes — language hints for GitHub's linguist + line-ending
+# overrides for files that must stay LF or CRLF.
+
+# ─── Line endings ───────────────────────────────────────────────────
+# Force LF on text files checked in by Windows contributors.
+*.py          text eol=lf
+*.pyi         text eol=lf
+*.ts          text eol=lf
+*.tsx         text eol=lf
+*.js          text eol=lf
+*.jsx         text eol=lf
+*.json        text eol=lf
+*.md          text eol=lf
+*.yaml        text eol=lf
+*.yml         text eol=lf
+*.toml        text eol=lf
+*.tf          text eol=lf
+*.tfvars      text eol=lf
+*.sh          text eol=lf
+*.service     text eol=lf
+.editorconfig text eol=lf
+.gitattributes  text eol=lf
+.gitignore    text eol=lf
+LICENSE       text eol=lf
+
+# ─── Language detection ────────────────────────────────────────────
+# Override GitHub's linguist where it's wrong. Terraform is its own
+# language, not "HCL".
+*.tf          linguist-language=HCL
+*.tfvars      linguist-language=HCL
+
+# Treat vendored or generated files as such so they don't pollute the
+# language stats.
+uv.lock       linguist-generated=true
+package-lock.json linguist-generated=true
+**/__pycache__/** linguist-generated=true
+**/.mypy_cache/** linguist-generated=true
+**/.ruff_cache/** linguist-generated=true
+
+# Markdown docs should count toward documentation, not as code.
+docs/**/*.md  linguist-documentation=true
+CHANGELOG.md  linguist-documentation=true
+CODE_OF_CONDUCT.md linguist-documentation=true
+CONTRIBUTING.md   linguist-documentation=true
+SECURITY.md       linguist-documentation=true
+SUPPORT.md        linguist-documentation=true
+LICENSE       linguist-documentation=true
+
+# Skip diff stats for binary blobs we never intend to review.
+*.png         binary
+*.jpg         binary
+*.jpeg        binary
+*.webp        binary
+*.ico         binary
+*.woff        binary
+*.woff2       binary
