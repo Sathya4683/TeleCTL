@@ -36,7 +36,7 @@ data "aws_iam_policy_document" "lambda_policy" {
     sid    = "SecretsRead"
     effect = "Allow"
     actions = [
-      "secretsmanager:GetSecretValue",
+      "ssm:GetParameter",
     ]
     resources = [
       local.whatsapp_app_secret_arn,
@@ -121,7 +121,7 @@ data "aws_iam_policy_document" "worker_policy" {
     sid    = "SecretsRead"
     effect = "Allow"
     actions = [
-      "secretsmanager:GetSecretValue",
+      "ssm:GetParameter",
     ]
     resources = [
       local.whatsapp_access_token_secret_arn,

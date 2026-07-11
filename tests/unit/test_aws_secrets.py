@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 import pytest
 from botocore.exceptions import ClientError
 
@@ -19,17 +21,17 @@ def _reset_secrets_module() -> None:
     secrets_mod._client = None
 
 
-def _make_client_with_value(value: str) -> object:
-    """Patch the module-level _get_client to return a fake boto3 client."""
+def _make_client_with_value(value: str) -> Any:
+    """Patch the module-level _get_client to return a fake SSM client."""
 
     class _FakeClient:
-        def get_secret_value(self, *, SecretId: str) -> dict[str, str]:
-            if SecretId == "missing":
+        def get_parameter(self, *, Name: str, WithDecryption: bool) -> dict[str, Any]:
+            if Name == "missing":
                 raise ClientError(
-                    {"Error": {"Code": "ResourceNotFoundException", "Message": "not found"}},
-                    "GetSecretValue",
+                    {"Error": {"Code": "ParameterNotFound", "Message": "not found"}},
+                    "GetParameter",
                 )
-            return {"SecretString": value}
+            return {"Parameter": {"Value": value, "Name": Name, "Type": "SecureString"}}
 
     return _FakeClient()
 
@@ -37,21 +39,21 @@ def _make_client_with_value(value: str) -> object:
 def test_get_secret_returns_value(monkeypatch: pytest.MonkeyPatch) -> None:
     fake = _make_client_with_value("super-secret-value")
     monkeypatch.setattr(secrets_mod, "_get_client", lambda: fake)
-    assert secrets_mod.get_secret("my/secret") == "super-secret-value"
+    assert secrets_mod.get_secret("wactl/whatsapp/access-token") == "super-secret-value"
 
 
 def test_get_secret_caches_value(monkeypatch: pytest.MonkeyPatch) -> None:
     call_count = {"n": 0}
 
     class _FakeClient:
-        def get_secret_value(self, *, SecretId: str) -> dict[str, str]:
+        def get_parameter(self, *, Name: str, WithDecryption: bool) -> dict[str, Any]:
             call_count["n"] += 1
-            return {"SecretString": "v1"}
+            return {"Parameter": {"Value": "v1"}}
 
     monkeypatch.setattr(secrets_mod, "_get_client", lambda: _FakeClient())
-    assert secrets_mod.get_secret("my/secret") == "v1"
+    assert secrets_mod.get_secret("wactl/whatsapp/access-token") == "v1"
     # Second call should be served from cache.
-    assert secrets_mod.get_secret("my/secret") == "v1"
+    assert secrets_mod.get_secret("wactl/whatsapp/access-token") == "v1"
     assert call_count["n"] == 1
 
 
@@ -64,23 +66,33 @@ def test_get_secret_client_error_raises_aws_integration_error(
         secrets_mod.get_secret("missing")
 
 
-def test_get_secret_no_secret_string_raises(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_get_secret_no_value_raises(monkeypatch: pytest.MonkeyPatch) -> None:
     class _FakeClient:
-        def get_secret_value(self, *, SecretId: str) -> dict[str, str]:
-            return {}  # no SecretString
+        def get_parameter(self, *, Name: str, WithDecryption: bool) -> dict[str, Any]:
+            return {"Parameter": {"Name": Name}}  # no Value
 
     monkeypatch.setattr(secrets_mod, "_get_client", lambda: _FakeClient())
     with pytest.raises(AWSIntegrationError):
-        secrets_mod.get_secret("binary-only-secret")
+        secrets_mod.get_secret("wactl/whatsapp/empty")
+
+
+def test_get_secret_no_parameter_key_raises(monkeypatch: pytest.MonkeyPatch) -> None:
+    class _FakeClient:
+        def get_parameter(self, *, Name: str, WithDecryption: bool) -> dict[str, Any]:
+            return {}  # no Parameter key at all
+
+    monkeypatch.setattr(secrets_mod, "_get_client", lambda: _FakeClient())
+    with pytest.raises(AWSIntegrationError):
+        secrets_mod.get_secret("wactl/whatsapp/empty")
 
 
 def test_clear_cache_forces_refetch(monkeypatch: pytest.MonkeyPatch) -> None:
     call_count = {"n": 0}
 
     class _FakeClient:
-        def get_secret_value(self, *, SecretId: str) -> dict[str, str]:
+        def get_parameter(self, *, Name: str, WithDecryption: bool) -> dict[str, Any]:
             call_count["n"] += 1
-            return {"SecretString": "v1"}
+            return {"Parameter": {"Value": "v1"}}
 
     monkeypatch.setattr(secrets_mod, "_get_client", lambda: _FakeClient())
     assert secrets_mod.get_secret("k") == "v1"

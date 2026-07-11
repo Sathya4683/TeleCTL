@@ -49,6 +49,6 @@ output "github_actions_role_arn" {
 }
 
 output "secrets_prefix" {
-  description = "ARN prefix of the WhatsApp secrets."
-  value       = "arn:aws:secretsmanager:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:secret:wactl/${var.env}/whatsapp"
+  description = "ARN prefix of the WhatsApp SSM parameters."
+  value       = "arn:aws:ssm:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:parameter/wactl/whatsapp"
 }

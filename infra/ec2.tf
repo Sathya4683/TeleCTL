@@ -94,7 +94,7 @@ data "cloudinit_config" "worker" {
 resource "aws_launch_template" "worker" {
   name_prefix   = "${local.suffix}-worker-"
   image_id      = data.aws_ami.al2023_arm64.id
-  instance_type = "t4g.small"
+  instance_type = "t4g.nano"
   user_data     = data.cloudinit_config.worker.rendered
 
   vpc_security_group_ids = [aws_security_group.worker.id]

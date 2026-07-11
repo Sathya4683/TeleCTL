@@ -1,9 +1,12 @@
-"""AWS Secrets Manager integration with TTL caching.
+"""AWS Systems Manager Parameter Store (SecureString) with TTL caching.
 
 Used to fetch sensitive configuration values (WhatsApp access token, app
 secret, verify token, Gemini API key) at runtime. Cache the value in
 memory for ``cache_ttl_seconds`` to avoid per-invocation API costs and
 latency. The cache is per-process; Lambda and worker each have their own.
+
+All values are stored as SecureString parameters under the ``/wactl/``
+hierarchy. Standard-tier parameters are free up to 10,000.
 """
 
 from __future__ import annotations
@@ -30,14 +33,18 @@ DEFAULT_CACHE_TTL_SECONDS = 300  # 5 minutes
 def _get_client() -> Any:
     global _client  # noqa: PLW0603 — intentional module-level singleton
     if _client is None:
-        _client = boto3.client("secretsmanager")
+        _client = boto3.client("ssm")
     return _client
 
 
 def get_secret(name: str, *, cache_ttl: float = DEFAULT_CACHE_TTL_SECONDS) -> str:
-    """Return the string value of secret ``name``.
+    """Return the string value of SSM SecureString parameter ``name``.
 
-    Raises :class:`AWSIntegrationError` if the secret cannot be fetched.
+    The function is named ``get_secret`` for call-site stability, but the
+    backing store is Parameter Store — values are decrypted server-side
+    via ``WithDecryption=True``.
+
+    Raises :class:`AWSIntegrationError` if the parameter cannot be fetched.
     """
     now = time.monotonic()
     with _cache_lock:
@@ -47,17 +54,18 @@ def get_secret(name: str, *, cache_ttl: float = DEFAULT_CACHE_TTL_SECONDS) -> st
 
     try:
         client = _get_client()
-        resp = client.get_secret_value(SecretId=name)
+        resp = client.get_parameter(Name=name, WithDecryption=True)
     except ClientError as exc:
         raise AWSIntegrationError(
-            f"Failed to fetch secret '{name}': {exc}",
+            f"Failed to fetch parameter '{name}': {exc}",
             retryable=True,
         ) from exc
 
-    value = cast(str | None, resp.get("SecretString"))
+    param = cast(dict[str, Any] | None, resp.get("Parameter"))
+    value = cast(str | None, param.get("Value")) if param else None
     if value is None:
         raise AWSIntegrationError(
-            f"Secret '{name}' has no SecretString",
+            f"Parameter '{name}' has no Value",
         )
 
     with _cache_lock:
@@ -66,7 +74,7 @@ def get_secret(name: str, *, cache_ttl: float = DEFAULT_CACHE_TTL_SECONDS) -> st
 
 
 def clear_cache() -> None:
-    """Drop all cached secrets. Test-only helper."""
+    """Drop all cached parameters. Test-only helper."""
     with _cache_lock:
         _cache.clear()
 
