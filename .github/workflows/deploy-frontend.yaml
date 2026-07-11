@@ -1,6 +1,10 @@
 name: Deploy frontend
 
-# Deploys the Next.js frontend in `web/` to Vercel.
+# Deploys the Next.js frontend in `web/` to Vercel via the official Vercel CLI.
+# Vercel's recommended flow:
+#   vercel pull    → fetches project config + env into .vercel/
+#   vercel build   → runs the Next.js build with Vercel's pipeline
+#   vercel deploy --prebuilt → uploads the already-built artifacts
 #
 # Triggers:
 #   • push to main        → production deploy (when `web/**` changes)
@@ -9,12 +13,10 @@ name: Deploy frontend
 #
 # Required secrets (configure under Settings → Secrets → Actions):
 #   VERCEL_TOKEN         —  https://vercel.com/account/tokens
-#   VERCEL_ORG_ID        —  `vercel link` writes this to web/.vercel/project.json
-#   VERCEL_PROJECT_ID    —  same source
 #
-# Optional:
-#   VERCEL_TEAM_SLUG     —  required only if the project is in a team,
-#                           not a personal account
+# After creating the token, run `vercel link` once locally from web/ so the
+# project is linked to your account. `.vercel/project.json` is gitignored;
+# `vercel pull` re-creates it on every run.
 
 on:
   push:
@@ -63,26 +65,38 @@ jobs:
       - name: Install frontend deps
         run: npm ci
 
-      # `next build` is what Vercel itself runs, so we run it here to
-      # catch type / lint / build errors before hitting their API.
+      - name: Install Vercel CLI
+        run: npm install --global vercel@latest
+
+      # Pull down project settings so vercel build / deploy know which
+      # project on your Vercel account to attach to. Reads/writes .vercel/.
+      - name: Pull Vercel project info
+        run: vercel pull --yes --environment=production --token=${{ secrets.VERCEL_TOKEN }}
+
+      # Catch lint errors before paying for a build.
       - name: Lint + type-check
         run: npm run lint
 
+      # Use Vercel's build pipeline (not raw `next build`) so the output
+      # matches what Vercel would produce on its own infrastructure.
       - name: Build
-        run: npm run build
+        run: vercel build ${{ github.event_name == 'pull_request' && '' || '--prod' }} --token=${{ secrets.VERCEL_TOKEN }}
         env:
           NEXT_TELEMETRY_DISABLED: 1
 
+      # Production on push-to-main, preview on PRs. We capture stdout so
+      # we can grep the deployed URL out for the PR comment.
       - name: Deploy to Vercel
         id: deploy
-        uses: amondnet/vercel-action@v25
-        with:
-          vercel-token: ${{ secrets.VERCEL_TOKEN }}
-          vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
-          vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
-          # Production deploy on push-to-main, preview on PRs.
-          vercel-args: ${{ github.event_name == 'pull_request' && '--yes' || '--prod --yes' }}
-          working-directory: web
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            DEPLOY_OUTPUT=$(vercel deploy --prebuilt --yes --token=${{ secrets.VERCEL_TOKEN }} 2>&1)
+          else
+            DEPLOY_OUTPUT=$(vercel deploy --prebuilt --prod --yes --token=${{ secrets.VERCEL_TOKEN }} 2>&1)
+          fi
+          printf '%s\n' "$DEPLOY_OUTPUT"
+          DEPLOY_URL=$(printf '%s\n' "$DEPLOY_OUTPUT" | grep -oE 'https://[a-zA-Z0-9.-]+\.vercel\.app' || true | head -1)
+          echo "preview-url=$DEPLOY_URL" >> "$GITHUB_OUTPUT"
 
       - name: Comment preview URL on PR
         if: github.event_name == 'pull_request'
