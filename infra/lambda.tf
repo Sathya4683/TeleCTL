@@ -14,15 +14,15 @@ resource "aws_lambda_function" "webhook" {
 
   environment {
     variables = {
-      WACTL_ENV       = var.env
-      AWS_REGION      = data.aws_region.current.name
-      LOG_LEVEL       = "INFO"
-      WHATSAPP_SECRET = local.whatsapp_app_secret_arn
-      ACCESS_SECRET   = local.whatsapp_access_token_secret_arn
-      VERIFY_SECRET   = local.whatsapp_verify_token_arn
-      MEDIA_BUCKET    = aws_s3_bucket.media.bucket
-      DEDUP_TABLE     = aws_dynamodb_table.dedup.name
-      JOBS_QUEUE      = aws_sqs_queue.jobs.url
+      WACTL_ENV                    = var.env
+      AWS_REGION                   = data.aws_region.current.name
+      LOG_LEVEL                    = "INFO"
+      WHATSAPP_APP_SECRET_SECRET   = local.whatsapp_app_secret_arn
+      WHATSAPP_ACCESS_TOKEN_SECRET = local.whatsapp_access_token_secret_arn
+      WHATSAPP_VERIFY_TOKEN_SECRET = local.whatsapp_verify_token_arn
+      MEDIA_BUCKET                 = aws_s3_bucket.media.bucket
+      DEDUP_TABLE                  = aws_dynamodb_table.dedup.name
+      JOBS_QUEUE                   = aws_sqs_queue.jobs.url
     }
   }
 

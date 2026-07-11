@@ -3,8 +3,9 @@
 All environment variables are read here. Application code MUST NOT call
 ``os.getenv(...)`` directly — use :data:`settings`.
 
-Secrets are referenced by Secrets Manager name. The actual value is fetched
-lazily via :mod:`wactl.integrations.aws.secrets` and cached.
+Secrets are referenced by SSM Parameter Store name (SecureString). The
+actual value is fetched lazily via :mod:`wactl.integrations.aws.secrets`
+and cached.
 """
 
 from __future__ import annotations
@@ -23,7 +24,7 @@ class Settings(BaseSettings):
 
     See :file:`.env.example` for the exhaustive list. Defaults are tuned
     for local development; production overrides via Lambda/worker env vars
-    or Secrets Manager.
+    or SSM Parameter Store.
     """
 
     model_config = SettingsConfigDict(
@@ -47,6 +48,8 @@ class Settings(BaseSettings):
     whatsapp_phone_number_id: str = ""  # populated via SSM or env
     whatsapp_waba_id: str = ""  # informational
     # Secrets Manager ARNs / names. The actual values are fetched lazily.
+    # SSM Parameter Store names (SecureString). The actual values are
+    # fetched lazily from the parameters under /wactl/whatsapp/*.
     whatsapp_access_token_secret: str = "wactl/whatsapp/access-token"
     whatsapp_app_secret_secret: str = "wactl/whatsapp/app-secret"
     whatsapp_verify_token_secret: str = "wactl/whatsapp/verify-token"
