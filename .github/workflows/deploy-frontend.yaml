@@ -95,7 +95,11 @@ jobs:
             DEPLOY_OUTPUT=$(vercel deploy --prebuilt --prod --yes --token=${{ secrets.VERCEL_TOKEN }} 2>&1)
           fi
           printf '%s\n' "$DEPLOY_OUTPUT"
-          DEPLOY_URL=$(printf '%s\n' "$DEPLOY_OUTPUT" | grep -oE 'https://[a-zA-Z0-9.-]+\.vercel\.app' || true | head -1)
+          # Vercel prints multiple URLs (inspect, temporary, final aliased).
+          # Take the last one — that's the production URL worth linking.
+          DEPLOY_URL=$(printf '%s\n' "$DEPLOY_OUTPUT" \
+            | grep -oE 'https://[a-zA-Z0-9.-]+\.vercel\.app' \
+            | tail -n1)
           echo "preview-url=$DEPLOY_URL" >> "$GITHUB_OUTPUT"
 
       - name: Comment preview URL on PR
