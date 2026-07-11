@@ -49,3 +49,7 @@ build/
 # Temporary Files
 tmp/
 temp/
+
+# vercel
+web/.vercel
+.vercel
