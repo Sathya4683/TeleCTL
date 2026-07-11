@@ -13,7 +13,7 @@ export default function DocsPage() {
         <p className="mt-4 text-zinc-600 dark:text-zinc-400">
           WACTL is a WhatsApp-first automation bot. You send a slash command in
           a DM; the bot replies with the processed result. Outgoing replies
-          never go through the public webhook — they're pushed directly from
+          never go through the public webhook — they&apos;re pushed directly from
           the worker to the WhatsApp Cloud API.
         </p>
 
@@ -71,7 +71,7 @@ export default function DocsPage() {
           </li>
           <li>
             <strong>Dedup</strong> — DynamoDB single-table, keyed on the
-            Meta <code>wamid</code>, with a 7-day TTL matching Meta's retry
+            Meta <code>wamid</code>, with a 7-day TTL matching Meta&apos;s retry
             window.
           </li>
           <li>
@@ -84,7 +84,7 @@ export default function DocsPage() {
           </li>
           <li>
             <strong>Storage</strong> — S3 media bucket with 24h lifecycle.
-            Downloads are immediate (Meta's media URLs expire in 5 min).
+            Downloads are immediate (Meta&apos;s media URLs expire in 5 min).
           </li>
         </ul>
 

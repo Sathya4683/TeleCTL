@@ -35,7 +35,7 @@ export default function TermsPage() {
         </h2>
         <p className="mt-4 text-sm text-zinc-700 dark:text-zinc-300">
           You agree not to send files that are illegal in your jurisdiction,
-          that infringe on others' intellectual property, or that contain
+          that infringe on others&apos; intellectual property, or that contain
           malware. We may log and report such attempts.
         </p>
 
