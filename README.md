@@ -207,10 +207,6 @@ Every log line is a structured JSON object, queryable through CloudWatch Logs In
 
 The whole platform runs on a single EC2 `t4g.nano` instance (AWS free tier) plus a handful of Lambda invocations a day. At personal scale, that's under a dollar a month.
 
-## Documentation
-
-`docs/textbook/` has an 18-chapter deep dive: the architecture, the folder structure, the webhook and worker in detail, infrastructure as code, security, testing, and deployment. This README is the short version; the textbook is the long one.
-
 ## Contributing
 
 See `CONTRIBUTING.md` for conventions on branches, commits, and pull requests. New commands are the most common contribution: drop a file in `src/wactl/commands/`, register it with the `@register` decorator, add a test, and open a PR.
