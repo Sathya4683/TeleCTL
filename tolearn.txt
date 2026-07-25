@@ -1,9 +1,0 @@
-- dependabot
-- .npmrc
-- .gitattributes
-- .tool-versions
-- .editorconfig
-- HMAC
-- ruff, mypy, moto, respx
-- webhook in this case
-- tenacity + backoff
