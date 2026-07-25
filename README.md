@@ -1,642 +1,216 @@
 <p align="center">
-  <img src="https://img.shields.io/badge/Python-3.12-blue?logo=python&logoColor=white" alt="Python 3.12" />
-  <img src="https://img.shields.io/badge/AWS-Lambda%20%7C%20EC2%20%7C%20S3%20%7C%20SQS-orange?logo=amazonaws" alt="AWS" />
-  <img src="https://img.shields.io/badge/Terraform-1.10+-purple?logo=terraform" alt="Terraform" />
-  <img src="https://img.shields.io/badge/Next.js-16-black?logo=nextdotjs" alt="Next.js" />
-  <img src="https://img.shields.io/badge/License-MIT-green" alt="MIT License" />
+  <img src="https://github.com/user-attachments/assets/8bf73067-7374-4cec-b6fe-5b103a978f26" width="423" height="385" alt="WACTL logo" />
 </p>
 
-# WACTL — WhatsApp Command-Line Tool
+<h1 align="center">WACTL</h1>
+<p align="center"><strong>WhatsApp Control</strong></p>
 
-> **Production-grade WhatsApp Cloud API automation platform.**
-> DM a WhatsApp Business number with a slash command, optionally attach a file, and get the processed result back — all powered by a serverless + worker architecture on AWS.
+<p align="center">
+  A WhatsApp bot that turns slash commands into file conversions, summaries, and translations, backed by a small AWS serverless and EC2 hybrid.
+</p>
 
-WACTL turns your WhatsApp chat into a personal tooling platform. Users send slash commands like `/pdf-docx`, `/image-resize`, `/translate`, or `/web-summary` to a WhatsApp Business number, and the system processes the request — either instantly within AWS Lambda (synchronous) or via an SQS-powered EC2 worker (asynchronous) — and replies directly in the chat with the result.
+<p align="center">
+  <img src="https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square" alt="License: MIT" />
+  <img src="https://img.shields.io/badge/Python-3.12-3776AB?style=flat-square&logo=python&logoColor=white" alt="Python 3.12" />
+  <img src="https://img.shields.io/badge/tests-~230%20passing-2ea44f?style=flat-square" alt="Tests" />
+</p>
 
 ---
 
-## Table of Contents
+## Contents
 
-- [What WACTL Does](#what-wactl-does)
-- [Tech Stack](#tech-stack)
-- [Architecture Overview](#architecture-overview)
-- [How the Entire Process Works](#how-the-entire-process-works)
-- [Synchronous vs Asynchronous — Explained](#synchronous-vs-asynchronous--explained)
-- [AWS Services — Where & Why](#aws-services--where--why)
-- [Available Commands](#available-commands)
-- [Plugin Architecture — The Command Registry](#plugin-architecture--the-command-registry)
-- [Project Structure](#project-structure)
-- [Local Development](#local-development)
+- [The problem](#the-problem)
+- [The idea](#the-idea)
+- [What it can do](#what-it-can-do)
+- [Architecture](#architecture)
+- [Tech stack](#tech-stack)
+- [Project structure](#project-structure)
+- [Getting started](#getting-started)
+- [Testing](#testing)
 - [Deployment](#deployment)
-- [CI/CD](#cicd)
+- [Security](#security)
+- [Observability](#observability)
+- [Cost](#cost)
+- [Documentation](#documentation)
+- [Contributing](#contributing)
 - [License](#license)
 
----
+## The problem
 
-## What WACTL Does
+Most weeks, you run into some version of the following:
 
-WACTL is a **WhatsApp-first personal-tooling platform**. The user DMs a WhatsApp Business number, types a slash command (e.g., `/pdf-docx`, `/image-resize 800x600`, `/translate es Hello world`), optionally attaches a file, and gets the processed result back in the same chat.
+- Someone sends you a PDF and you need it as an editable Word doc, but you're on your phone with no app open for that.
+- A long article or a wall of screenshots lands in a chat and you just want the two-line summary.
+- You want to know if your pull request got reviewed, without opening GitHub.
+- A textbook chapter needs to become something you can listen to on a walk.
+- A document is in a language you don't read, and you need it translated before a meeting.
 
-**Key capabilities:**
+Almost all of this shows up as a file, a link, or a message inside WhatsApp itself. Solving it usually means leaving the chat, opening a handful of other apps, and coming back with the result.
 
-- **Document conversion** — PDF → DOCX, PDF splitting, PDF merging
-- **Image processing** — Resize and compress images on the fly
-- **Audio generation** — Convert PDFs to audiobooks via Gemini TTS
-- **Web summarization** — Fetch any URL and get an AI-powered summary
-- **Translation** — Translate text between languages using Gemini
-- **GitHub integration** — Summarize pull requests
+## The idea
 
-The backend intelligently decides whether to process a command **synchronously** (fast, inline within Lambda) or **asynchronously** (heavy workloads offloaded to an EC2 worker via SQS). Both execution paths share the same core Python package (`src/wactl/`) and deliver results back via the WhatsApp Cloud API.
+WACTL turns WhatsApp into the interface. Send a slash command, attach a file if the command needs one, and the bot replies in the same chat. `/pdf-docx` with a PDF attached gets you back a Word document. `/web-summary <url>` gets you a summary. No separate app to install, no new account, no tab switching. If the file or link is already in WhatsApp, the fix stays in WhatsApp too.
 
----
+Underneath, it's a small production-shaped AWS backend: a webhook Lambda for anything that finishes in a couple of seconds, and a single EC2 worker for anything that doesn't.
 
-## Tech Stack
+## What it can do
 
-| Layer | Technology | Purpose |
+| Command | What it does | Runs on |
 |---|---|---|
-| **Runtime** | Python 3.12 | Core backend language |
-| **HTTP Client** | `httpx` (async) | All outbound HTTP calls (WhatsApp API, web fetching) |
-| **AWS SDK** | `boto3` | S3, SQS, DynamoDB, Secrets Manager interactions |
-| **Data Modeling** | `pydantic` v2 + `pydantic-settings` | Request/response validation, settings from env vars |
-| **Logging** | `structlog` | JSON structured logging with contextual binding |
-| **LLM / TTS** | `google-genai` (Gemini) | Text summarization, translation, text-to-speech |
-| **PDF Processing** | `pdf2docx`, `pymupdf`, `pypdf` | PDF → DOCX, page splitting, merging |
-| **Image Processing** | `Pillow` | Resize, compress, format conversion |
-| **HTML Parsing** | `beautifulsoup4`, `markdownify`, `lxml` | Web page extraction for `/web-summary` |
-| **Audio** | `pydub` | Audio concatenation for audiobook pipeline |
-| **Retry Logic** | `tenacity` | Exponential backoff for WhatsApp 429 responses |
-| **Serverless** | AWS Lambda (Python 3.12) | Webhook handler + sync command execution |
-| **Compute** | AWS EC2 (t4g.nano, ARM64) | Long-running SQS worker for async commands |
-| **Queue** | AWS SQS (Standard) | Job queue between Lambda and EC2 worker |
-| **Storage** | AWS S3 | Media files (input/output) + release artifacts |
-| **Dedup** | AWS DynamoDB | Idempotent message processing (7-day TTL) |
-| **Secrets** | AWS Secrets Manager / SSM Parameter Store | WhatsApp tokens, API keys |
-| **API** | AWS API Gateway (REST) | HTTPS endpoint for Meta webhook callbacks |
-| **Monitoring** | AWS CloudWatch | Log groups, alarms (DLQ depth, Lambda errors, CPU) |
-| **Scheduling** | AWS EventBridge | Daily cleanup cron (stub for v1) |
-| **IaC** | Terraform 1.10+ | All AWS resources, S3 backend with native lock |
-| **Frontend** | Next.js 16 + Tailwind CSS v4 | Landing page, docs, privacy/terms (Vercel) |
-| **CI/CD** | GitHub Actions + OIDC | Automated lint, test, build, deploy — zero long-lived keys |
-| **Package Manager** | `uv` | Fast Python dependency management |
+| `/image-resize <WxH>` | Resize an attached image to fit given dimensions | Lambda (sync) |
+| `/image-compress q= max= target=` | Recompress an image to a target quality or size | Lambda (sync) |
+| `/pdf-docx` | Convert an attached PDF into a Word document | Worker (async) |
+| `/pdf-audio` | Turn a PDF into a spoken audio file | Worker (async) |
+| `/merge-pdf` | Combine several PDFs into one | Worker (async) |
+| `/split-pdf <ranges>` | Split a PDF by page range, e.g. `1-3,5` | Worker (async) |
+| `/web-summary <url>` | Fetch a page and reply with a short summary | Lambda (sync) |
+| `/github-pr <url>` | Summarize a GitHub pull request's diff | Lambda (sync) |
+| `/translate <lang> <text/pdf>` | Translate text or an attached PDF | Lambda (sync) |
+| `/help` | List available commands | Lambda (sync) |
 
----
+Sync commands run inline in the Lambda and finish in a couple of seconds. Anything that would run longer, like converting a 200-page PDF into audio, gets queued and picked up by the worker instead, so the user isn't left waiting on an open HTTP request.
 
-## Architecture Overview
+## Architecture
 
-Below is the full architecture diagram of the system:
+WACTL runs across two compute surfaces (a webhook Lambda and a long-running EC2 worker), two storage surfaces (S3 for media, DynamoDB for webhook dedup) and one queue (SQS) in between. Fast commands are handled inline by the Lambda; slow ones are enqueued and drained by the worker. The WhatsApp Cloud API is the entry and exit point for every message.
 
 ![WACTL Architecture Diagram](docs/architectureV2.png)
 
-### Reading the Diagram — Step by Step
+## Tech stack
 
-The numbered steps in the architecture diagram trace the lifecycle of every WhatsApp message through the system:
+**Backend**
 
-| Step | What Happens | Component |
-|------|---|---|
-| **①** | User sends a message or uploads a file in WhatsApp | WhatsApp client |
-| **②** | Meta's servers POST the webhook payload (message + metadata) to our registered callback URL | Meta WhatsApp Cloud API |
-| **③** | AWS API Gateway receives the HTTPS request and proxies it to Lambda | API Gateway (REST) |
-| **④** | The Webhook Lambda parses the envelope, verifies the HMAC signature, deduplicates the message ID via DynamoDB, and routes the text to the correct command | Lambda + DynamoDB |
-| **⑤** | For **async commands** (`sync=False`), the dispatcher serializes a `Job` and pushes it onto the SQS jobs queue. Lambda replies with a "queued" acknowledgment immediately | SQS |
-| **⑥** | The Queue Lambda / dispatcher routes the job to the appropriate worker | Lambda → SQS |
-| **⑦** | The EC2 Worker (long-running process) picks up the job via SQS long-poll and executes the command — document conversion, audio generation, etc. | EC2 |
-| **⑧** | The worker reads input files from and writes output files to S3 | S3 |
-| **⑨** | The result is processed — job status, logs, and results are tracked | Result processing |
-| **⑩** | The response is prepared for delivery via the WhatsApp Send Lambda | Lambda |
-| **⑪** | The response (text, document, image, audio) is sent back through the WhatsApp Cloud API | WhatsApp Cloud API |
-| **⑫** | The user receives the processed result in their WhatsApp chat | WhatsApp client |
+A single Python 3.12 package shared by the Lambda and the worker, with strict typing and linting enforced in CI.
 
-### Shared Services (Bottom of Diagram)
+<p align="center"><img src="https://img.shields.io/badge/Python-3776AB?style=flat-square&logo=python&logoColor=white" alt="Python" /></p>
 
-| Service | Role |
-|---|---|
-| **CloudWatch** | Centralized JSON logs + metric alarms for Lambda errors, DLQ depth, worker CPU |
-| **Secrets Manager** | Stores WhatsApp access token, app secret, verify token, Gemini API key |
-| **Cognito** | Optional auth for a future web dashboard |
-| **EventBridge** | Daily scheduled cleanup of the DynamoDB dedup table (stub in v1) |
-| **SNS** | Alert notifications (email/Slack) when CloudWatch alarms fire |
-| **CloudFront** | File distribution (planned for future use) |
+Notable libraries: pydantic and pydantic-settings for config and validation, structlog for structured logging, httpx with tenacity for retries and backoff, boto3 for AWS access, and Pillow, pdf2docx, PyMuPDF, pypdf, and pydub for the actual file conversions.
 
-### External Services (Right Side of Diagram)
+**Cloud & infrastructure**
 
-WACTL integrates with external APIs for specific commands:
+Lambda handles the fast synchronous commands. A single EC2 worker long-polls SQS for everything else. S3 stores media, DynamoDB tracks dedup, and Terraform manages every resource in between.
 
-- **GitHub API** — `/github-pr` fetches PR diffs and metadata
-- **Notion API** — Planned integration
-- **Google Calendar API** — Planned integration
-- **Gmail API** — Planned integration
-- **Web / Other APIs** — `/web-summary` fetches and parses public web pages
+<p align="center">
+  <img src="https://img.shields.io/badge/AWS_Lambda-FF9900?style=flat-square&logo=awslambda&logoColor=white" alt="AWS Lambda" />&nbsp;<img src="https://img.shields.io/badge/Amazon_S3-569A31?style=flat-square&logo=amazons3&logoColor=white" alt="Amazon S3" />&nbsp;<img src="https://img.shields.io/badge/DynamoDB-4053D6?style=flat-square&logo=amazondynamodb&logoColor=white" alt="Amazon DynamoDB" />&nbsp;<img src="https://img.shields.io/badge/Amazon_SQS-FF4F8B?style=flat-square&logo=amazonsqs&logoColor=white" alt="Amazon SQS" />&nbsp;<img src="https://img.shields.io/badge/Amazon_EC2-FF9900?style=flat-square&logo=amazonec2&logoColor=white" alt="Amazon EC2" />&nbsp;<img src="https://img.shields.io/badge/Terraform-7B42BC?style=flat-square&logo=terraform&logoColor=white" alt="Terraform" />&nbsp;<img src="https://img.shields.io/badge/Docker-2496ED?style=flat-square&logo=docker&logoColor=white" alt="Docker" />
+</p>
 
----
+**Integrations**
 
-## How the Entire Process Works
+Gemini handles summarization, translation, and text-to-speech. The WhatsApp Cloud API is used for both inbound webhooks and outbound replies. GitHub's REST API powers the PR summaries.
 
-The system operates as a **webhook-driven event pipeline**. Here's the full lifecycle from message to response:
+<p align="center">
+  <img src="https://img.shields.io/badge/Google_Gemini-886FBF?style=flat-square&logo=googlegemini&logoColor=white" alt="Google Gemini" />&nbsp;<img src="https://img.shields.io/badge/WhatsApp_Cloud_API-25D366?style=flat-square&logo=whatsapp&logoColor=white" alt="WhatsApp Cloud API" />&nbsp;<img src="https://img.shields.io/badge/GitHub_API-181717?style=flat-square&logo=github&logoColor=white" alt="GitHub API" />
+</p>
 
-### 1. Webhook Reception
+**Frontend**
 
-```
-User WhatsApp → Meta Cloud API → API Gateway (HTTPS) → Lambda
-```
+A statically generated marketing site: a landing page, a command reference, and the privacy and terms pages the WhatsApp Business API requires.
 
-Meta's WhatsApp Cloud API sends a POST to the API Gateway URL registered in the Meta Developer dashboard. API Gateway proxies the entire request (headers + body) to the Lambda function using the `AWS_PROXY` integration type.
+<p align="center">
+  <img src="https://img.shields.io/badge/Next.js_16-000000?style=flat-square&logo=nextdotjs&logoColor=white" alt="Next.js" />&nbsp;<img src="https://img.shields.io/badge/React_19-20232A?style=flat-square&logo=react&logoColor=61DAFB" alt="React" />&nbsp;<img src="https://img.shields.io/badge/TypeScript-3178C6?style=flat-square&logo=typescript&logoColor=white" alt="TypeScript" />&nbsp;<img src="https://img.shields.io/badge/Tailwind_CSS_v4-06B6D4?style=flat-square&logo=tailwindcss&logoColor=white" alt="Tailwind CSS" />&nbsp;<img src="https://img.shields.io/badge/Vercel-000000?style=flat-square&logo=vercel&logoColor=white" alt="Vercel" />
+</p>
 
-### 2. Signature Verification
+**Testing & delivery**
 
-The Lambda's first action is **HMAC-SHA256 verification**. Meta signs every webhook payload with the app secret:
+About 230 tests run in roughly 10 seconds with AWS and HTTP fully mocked. GitHub Actions runs CI on every push and deploys on merge to `main`, authenticating to AWS through OIDC instead of long-lived keys.
 
-```python
-# X-Hub-Signature-256: sha256=<hex>
-expected = hmac.new(app_secret, msg=raw_body, digestmod=sha256).hexdigest()
-hmac.compare_digest(expected, provided)  # constant-time comparison
-```
+<p align="center">
+  <img src="https://img.shields.io/badge/Pytest-0A9EDC?style=flat-square&logo=pytest&logoColor=white" alt="Pytest" />&nbsp;<img src="https://img.shields.io/badge/GitHub_Actions-2088FF?style=flat-square&logo=githubactions&logoColor=white" alt="GitHub Actions" />
+</p>
 
-If the signature doesn't match, the request is logged and dropped (but we still return HTTP 200 — returning non-200 would cause Meta to retry for up to 7 days).
+Notable libraries: moto and respx mock AWS and HTTP in tests, freezegun freezes time for TTL checks, and ruff plus mypy (strict mode) enforce lint rules and full type coverage. Dependencies are managed with [uv](https://docs.astral.sh/uv/).
 
-### 3. Parse & Deduplicate
-
-The webhook payload is parsed into structured `ParsedMessage` objects. Each message has a unique `wamid` (WhatsApp Message ID). Before processing, the handler performs a **conditional put** on DynamoDB:
-
-```
-DynamoDB table: wactl-<env>-dedup
-Partition key:  pk = <wamid>
-TTL:            expires_at = now + 7 days
-```
-
-If the `wamid` already exists (claimed by a previous invocation), the message is silently dropped. This makes the system **idempotent** against Meta's at-least-once delivery guarantee.
-
-### 4. Route & Dispatch
-
-The message text is parsed into `(command_name, args)`:
-
-```
-"/image-resize 800x600"  →  name="/image-resize", args="800x600"
-"/pdf-docx"              →  name="/pdf-docx",      args=""
-```
-
-The command name is looked up in the **decorator registry** (`_REGISTRY` dict). Each registered command declares `sync: bool`, which determines the execution path.
-
-### 5a. Sync Execution (Lambda Inline)
-
-For `sync=True` commands, the dispatcher runs the command **directly inside the Lambda invocation**:
-
-```
-Lambda → download media (if needed) → run command → upload result to S3 → send reply via WhatsApp API → return 200
-```
-
-Total latency: typically 1-10 seconds. Lambda has a 60-second timeout configured.
-
-### 5b. Async Execution (SQS → EC2 Worker)
-
-For `sync=False` commands, the dispatcher:
-
-1. Serializes a `Job` (command name, args, user context, media metadata) as JSON
-2. Sends the job to the SQS queue (`sqs.send_message`)
-3. Sends an immediate "⏳ Queued…" reply to the user via WhatsApp
-4. Returns 200 to API Gateway
-
-The EC2 worker picks it up:
-
-```
-EC2 Worker (long-poll SQS, 20s wait) → receive message → deserialize Job
-→ rebuild dependencies → run command → upload to S3 → reply via WhatsApp
-→ delete SQS message
-```
-
-If the command fails, the message returns to the queue after the visibility timeout (15 min). After 5 failures, it moves to the **Dead Letter Queue (DLQ)**.
-
----
-
-## Synchronous vs Asynchronous — Explained
-
-The sync/async split is the core architectural decision. Each command declares its execution mode via a single `sync: bool` flag in the `@register` decorator.
-
-### Synchronous Commands (`sync=True`) — Run in Lambda
-
-**When to use:** The command completes in < 60 seconds and doesn't need heavy compute or large file processing.
-
-
-**How it works:**
-1. The Lambda handler calls `dispatch_sync(routed, ...)` directly
-2. The dispatcher builds a `CommandContext` with all dependencies (WhatsApp client, HTTP client, Gemini client, S3 client)
-3. If the command `requires_media=True`, the dispatcher downloads the media attachment from WhatsApp's CDN
-4. The command's `run(ctx)` method executes inline
-5. The command uploads any output to S3, generates a presigned URL, and sends the result back via the WhatsApp API
-6. Lambda returns `{"statusCode": 200}` to API Gateway
-
-**Characteristics:**
-- Response time: 1-10 seconds
-- Lambda timeout: 60 seconds
-- Pay-per-invocation (Lambda free tier: 1M requests/month)
-- No queue hop, no worker involvement
-
-### Asynchronous Commands (`sync=False`) — Enqueued to SQS → EC2 Worker
-
-**When to use:** The command is compute-heavy, takes > 10 seconds, involves large files, or requires sustained processing.
-
-
-**How it works:**
-1. The Lambda handler calls `dispatch_async(routed, ...)` which serializes a `Job` object and pushes it to SQS
-2. Lambda sends an immediate "queued" acknowledgment to the user
-3. Lambda returns 200 — total Lambda time is < 500ms
-4. The EC2 worker runs a continuous `while not shutdown.is_set()` loop that long-polls SQS with a 20-second wait
-5. When a message arrives, the worker deserializes the `Job`, rebuilds dependencies (WhatsApp client, HTTP, Gemini — using `build_deps()`), and calls `cmd.run(ctx)`
-6. On success, the worker deletes the SQS message
-7. On failure, the message becomes visible again after the 15-minute visibility timeout for retry
-
-**Characteristics:**
-- Processing time: 5 seconds to 15 minutes
-- Automatic retries (5 attempts before DLQ)
-- EC2 t4g.nano always-on: ~$3/month
-- SIGTERM-aware graceful shutdown for deployments
-
-### Sync vs Async — Command Map
-
-| Command | Mode | Why |
-|---|---|---|
-| `/image-resize` |  Sync | Pillow resize < 2s, small payloads |
-| `/image-compress` |  Sync | Quality reduction is instant |
-| `/web-summary` | Sync | HTTP fetch + one Gemini call < 10s |
-| `/translate` |  Sync | Single Gemini API call |
-| `/github-pr` |  Sync | GitHub API fetch + Gemini summary |
-| `/pdf-docx` |  Async | `pdf2docx` takes 5-30s on multi-page docs |
-| `/pdf-audio` |  Async | TTS fan-out across chunks: 30-120s |
-| `/merge-pdf` |  Async | Multiple file downloads + merge |
-| `/split-pdf` |  Async | Page extraction + multi-file upload |
-
-### Key Design Insight
-
-Both sync and async commands **share the same `Command` base class, the same `CommandContext`, and the same `run(ctx)` method signature**. The _only_ difference is where `run()` is called — Lambda vs EC2. This means:
-
-- A command can be switched from sync to async (or vice versa) by changing **one boolean** in the `@register` decorator
-- No code changes are needed in the command implementation itself
-- The worker reuses `build_deps()` to construct the exact same dependency graph
-
----
-
-## AWS Services — Where & Why
-
-### AWS Lambda
-
-**File:** [`lambda.tf`](infra/lambda.tf) | **Handler:** [`handler.py`](lambda/webhook/handler.py)
-
-| Property | Value |
-|---|---|
-| Runtime | Python 3.12 (x86_64) |
-| Memory | 512 MB |
-| Timeout | 60 seconds |
-| Trigger | API Gateway REST (POST + GET `/webhook`) |
-
-**What it does:**
-- Receives every WhatsApp webhook from Meta via API Gateway
-- Verifies HMAC signatures (security)
-- Deduplicates messages via DynamoDB (idempotency)
-- Runs sync commands inline (image resize, translate, web summary)
-- Enqueues async commands to SQS (PDF conversion, audio generation)
-- Always returns HTTP 200 to prevent Meta's 7-day retry storm
-
-**Cold start optimization:**
-- Dependencies are built lazily via `_get_deps()` — a singleton that persists across Lambda container reuse
-- Imports like `httpx`, `GeminiClient`, `WhatsAppClient` are lazy (only when first needed)
-- The handler module is intentionally thin — all logic lives in `src/wactl/`
-
-### Amazon EC2
-
-**File:** [`ec2.tf`](infra/ec2.tf) | **Worker:** [`main.py`](worker/main.py)
-
-| Property | Value |
-|---|---|
-| Instance type | t4g.nano (ARM64 Graviton) |
-| AMI | Amazon Linux 2023 |
-| ASG | Min=1, Max=2, Desired=1 |
-| Cost | ~$3/month |
-
-**What it does:**
-- Runs the `worker.main.Worker` process as a systemd service
-- Long-polls SQS for async jobs (20-second wait per poll)
-- Executes heavy commands (PDF conversion, TTS audio generation)
-- Downloads media from WhatsApp, processes it, uploads results to S3
-- Sends the final reply to the user via the WhatsApp Cloud API
-- Handles SIGTERM gracefully — drains the in-flight job before exiting
-
-**Provisioning flow:**
-1. Terraform creates a Launch Template + ASG
-2. cloud-init on first boot:
-   - Installs Python 3.12, creates a `wactl` system user
-   - Downloads `worker.tar.gz` from the S3 releases bucket
-   - Installs a systemd unit (`wactl-worker.service`)
-   - Starts the worker
-
-**Why EC2 over Lambda/Fargate:**
-- Lambda would need Provisioned Concurrency ($$$) or suffer cold starts per job
-- Fargate adds container orchestration overhead
-- EC2 t4g.nano is the cheapest option for a steady-state, always-on worker
-
-### Amazon S3
-
-**File:** [`s3.tf`](infra/s3.tf)
-
-Two buckets, both with public access blocked and server-side encryption (AES-256):
-
-| Bucket | Purpose | Lifecycle |
-|---|---|---|
-| `wactl-<env>-media-<account>` | Stores downloaded attachments and processed output files (resized images, converted documents, audio) | Auto-expire after **1 day** |
-| `wactl-<env>-releases-<account>` | Holds `lambda.zip` and `worker.tar.gz` deployment artifacts | Non-current versions expire after **30 days** |
-
-**How S3 is used in the data flow:**
-1. **Upload:** After a command processes media (e.g., resize an image), the output bytes are uploaded to the media bucket with `s3.put_object()`
-2. **Presigned URL:** A time-limited presigned URL is generated with `s3.presigned_get_url()` — this URL is sent to the user via WhatsApp so they can download the file
-3. **Worker bootstrap:** The EC2 cloud-init script downloads `worker.tar.gz` from the releases bucket on first boot
-
-### Amazon SQS
-
-**File:** [`sqs.tf`](infra/sqs.tf)
-
-| Queue | Purpose | Config |
-|---|---|---|
-| `wactl-<env>-jobs` | Main job queue for async commands | Retention: 4 days, Visibility: 15 min, Long-poll: 20s, SSE enabled |
-| `wactl-<env>-jobs-dlq` | Dead Letter Queue for failed jobs | Retention: 14 days, Max receives: 5 |
-
-**How SQS connects Lambda ↔ EC2:**
-
-```
-Lambda (dispatch_async)           EC2 Worker (long-poll)
-        │                                 │
-        ├── serialize Job to JSON         │
-        ├── sqs.send_message() ─────────► │ sqs.receive_message()
-        ├── reply "queued" to user        │ deserialize Job
-        └── return 200                    ├── cmd.run(ctx)
-                                          ├── reply via WhatsApp API
-                                          └── sqs.delete_message()
-```
-
-**Why SQS Standard (not FIFO):**
-- Jobs are independent — no ordering requirement
-- At-least-once delivery is fine because DynamoDB dedup catches duplicates
-- Unlimited throughput (FIFO caps at 300 msg/s)
-
-### Amazon DynamoDB
-
-**File:** [`dynamodb.tf`](infra/dynamodb.tf)
-
-| Property | Value |
-|---|---|
-| Table name | `wactl-<env>-dedup` |
-| Partition key | `pk` (String) — the WhatsApp message ID (`wamid`) |
-| Billing | Pay-per-request (no capacity planning) |
-| TTL | `expires_at` — auto-deletes rows after 7 days |
-| PITR | Enabled (point-in-time recovery) |
-
-**Purpose:** Prevents duplicate processing. Meta retries webhook delivery for up to 7 days on non-200 responses. Even with 200 responses, at-least-once delivery means the same `wamid` can arrive multiple times. The Lambda does a conditional put (`try_claim`) — if the row already exists, the message is dropped.
-
-### AWS API Gateway (REST)
-
-**File:** [`apigateway.tf`](infra/apigateway.tf)
-
-- **Type:** REST API (not HTTP API) — chosen for native `binary_media_types` support
-- **Endpoints:**
-  - `GET /webhook` — Meta's verification handshake (echoes `hub.challenge`)
-  - `POST /webhook` — Receives all WhatsApp webhook payloads
-- **Integration:** `AWS_PROXY` → Lambda (passes full request including headers for HMAC verification)
-- **Binary media types:** Supports PDF, DOCX, OGG, MPEG, JPEG, PNG, WebP
-
-### AWS Secrets Manager / SSM Parameter Store
-
-**File:** [`secrets.tf`](infra/secrets.tf)
-
-Stores sensitive credentials as SecureString parameters:
-
-| Secret | Purpose |
-|---|---|
-| `wactl/whatsapp/access-token` | WhatsApp system-user token for sending messages |
-| `wactl/whatsapp/app-secret` | HMAC key for webhook signature verification |
-| `wactl/whatsapp/verify-token` | Token echoed during Meta's webhook registration handshake |
-| `wactl/gemini/api-key` | Google Gemini API key for LLM + TTS |
-
-Lambda and EC2 environment variables hold only the **secret names**, never the values. At runtime, `secrets.get_secret(name)` fetches the actual value.
-
-### Amazon CloudWatch
-
-**File:** [`cloudwatch.tf`](infra/cloudwatch.tf)
-
-**Log groups:**
-- `/aws/lambda/wactl-<env>-webhook` — Lambda structured JSON logs (30-day retention)
-- `/wactl/<env>/worker` — EC2 worker logs (30-day retention)
-
-**Alarms:**
-| Alarm | Trigger | Meaning |
-|---|---|---|
-| DLQ depth ≥ 1 | Messages in the Dead Letter Queue | Jobs are failing repeatedly |
-| Lambda errors ≥ 1 | Lambda function errors | Webhook handler is throwing exceptions |
-| Worker CPU > 80% for 15 min | High CPU on EC2 | Possible runaway job or backlog |
-
-### Amazon EventBridge
-
-**File:** [`eventbridge.tf`](infra/eventbridge.tf)
-
-A daily cron rule (`cron(0 3 * * ? *)` — 03:00 UTC) for DynamoDB dedup table cleanup. Currently **disabled** (stub for v1) — the TTL auto-expire handles cleanup for now.
-
----
-
-## Available Commands
-
-| Command | Description | Mode | Requires Media |
-|---|---|---|---|
-| `/image-resize <WxH>` | Resize an image to specified dimensions | Sync |  Yes |
-| `/image-compress` | Compress an image to reduce file size |  Sync |  Yes |
-| `/web-summary <URL>` | Fetch a web page and summarize it with AI |  Sync |  No |
-| `/translate <lang> <text>` | Translate text to a target language |  Sync |  No |
-| `/github-pr <URL>` | Summarize a GitHub pull request |  Sync |  No |
-| `/pdf-docx` | Convert a PDF to DOCX format |  Async |  Yes |
-| `/pdf-audio` | Convert a PDF to an audiobook (TTS) |  Async |  Yes |
-| `/merge-pdf` | Merge multiple PDFs into one |  Async |  Yes |
-| `/split-pdf <ranges>` | Split a PDF by page ranges |  Async |  Yes |
-
----
-
-## Plugin Architecture — The Command Registry
-
-Adding a new command is designed to be **frictionless** — one file, one decorator, zero router/dispatcher changes.
-
-### How It Works
-
-```python
-# src/wactl/commands/my_thing.py
-from wactl.commands.base import Command, CommandContext
-from wactl.commands.registry import register
-from wactl.models.command import CommandResponse
-
-@register("/my-thing", sync=True, description="Does the thing.")
-class MyThingCommand(Command):
-    async def run(self, ctx: CommandContext) -> CommandResponse:
-        # Access ctx.whatsapp, ctx.gemini, ctx.s3, ctx.http, etc.
-        return CommandResponse(success=True)
-```
-
-The `@register` decorator:
-1. Attaches `CommandMeta` (name, sync, requires_media, description) to the class
-2. Inserts the class into a process-global `_REGISTRY` dict
-3. The router looks up commands by name at request time
-4. The dispatcher checks `meta.sync` to decide Lambda vs SQS
-
-### To Add a New Command
-
-1. Create `src/wactl/commands/<name>.py` with the class + decorator
-2. Add `from wactl.commands import <name>` to `src/wactl/commands/__init__.py`
-3. Add a unit test in `tests/unit/test_<name>.py`
-4. Add an entry to `web/lib/site.ts` (COMMANDS array) for the docs page
-
-**That's it** — no router changes, no dispatcher changes, no Terraform.
-
----
-
-## Project Structure
+## Project structure
 
 ```
 wactl/
-├── src/wactl/                 # Shared Python package (Lambda + Worker)
-│   ├── config.py              # pydantic-settings; reads env vars
-│   ├── logging.py             # structlog config + contextvars helper
-│   ├── exceptions.py          # WactlError hierarchy
-│   ├── constants.py           # Version constants, MIME types
-│   ├── webhook.py             # Lambda entry: parse → dedup → route → dispatch
-│   ├── router.py              # Text → RoutedCommand (name + class + args)
-│   ├── dispatcher.py          # sync/async decision + context builder
-│   ├── models/                # Pydantic models (Job, User, Command, Webhook)
-│   ├── integrations/
-│   │   ├── aws/               # S3, SQS, DynamoDB, Secrets clients
-│   │   ├── whatsapp/          # WhatsApp client, messages, media, parser
-│   │   ├── converters/        # PDF→DOCX, image resize/compress
-│   │   ├── gemini/            # Gemini client (text, TTS)
-│   │   ├── github/            # PR summary
-│   │   └── web/               # Web page fetcher + extractor
-│   ├── commands/              # @register-decorated command plugins
-│   └── services/              # Multi-step workflows (audiobook pipeline)
-│
-├── lambda/                    # Lambda entry points (thin wrappers)
-│   ├── webhook/handler.py     # lambda_handler → wactl.webhook.handle()
-│   └── scheduler/handler.py   # EventBridge cleanup (stub)
-│
-├── worker/                    # EC2 worker process
-│   ├── main.py                # Long-poll SQS + dispatch loop
-│   ├── shutdown.py            # SIGTERM/SIGINT graceful handlers
-│   ├── Dockerfile             # Multi-stage build → worker.tar.gz
-│   ├── build.sh               # Docker-based builder script
-│   └── systemd/               # wactl-worker.service unit file
-│
-├── infra/                     # Terraform (all AWS resources)
-│   ├── apigateway.tf          # REST API + /webhook endpoints
-│   ├── lambda.tf              # Webhook Lambda function
-│   ├── sqs.tf                 # Jobs queue + DLQ
-│   ├── dynamodb.tf            # Dedup table with TTL
-│   ├── s3.tf                  # Media + releases buckets
-│   ├── ec2.tf                 # Launch template + ASG + cloud-init
-│   ├── iam.tf                 # Roles + policies + OIDC
-│   ├── secrets.tf             # SSM SecureString parameters
-│   ├── cloudwatch.tf          # Log groups + alarms
-│   ├── eventbridge.tf         # Daily cleanup cron (disabled)
-│   └── backend.tf             # S3 state backend
-│
-├── web/                       # Next.js 16 + Tailwind v4 (Vercel)
-│   ├── app/                   # Pages: landing, docs, privacy, terms
-│   ├── components/            # QR code SVG, shared UI
-│   └── lib/site.ts            # Constants, command list, wa.me link
-│
-├── tests/
-│   ├── unit/                  # Per-module tests, mocked dependencies
-│   └── integration/           # End-to-end webhook + worker tests
-│
-├── docs/
-│   ├── CODEBASE_GUIDE.md      # Architecture tour for engineers
-│   ├── DECISIONS.md           # Lightweight ADRs
-│   ├── SETUP.md               # Full setup walkthrough
-│   └── architectureV1.png     # Architecture diagram
-│
-├── pyproject.toml             # Dependencies + tool configs (ruff, mypy, pytest)
-└── .github/workflows/         # CI + deploy pipelines
+├── src/wactl/          # the core package (config, logging, webhook, router, dispatcher)
+│   ├── commands/        # one file per slash command, registered via a decorator
+│   ├── models/          # pydantic value objects
+│   ├── integrations/    # aws, whatsapp, gemini, github, converters, web
+│   └── services/        # multi-step workflows (e.g. the audiobook pipeline)
+├── lambda/webhook/      # the Lambda entry point
+├── worker/              # the EC2 worker: long-poll SQS, dispatch, systemd unit
+├── infra/               # Terraform for every AWS resource
+├── web/                 # the Next.js marketing site
+├── tests/               # unit and integration tests (pytest, moto, respx)
+├── docs/                # this README, ADRs, and an 18-chapter deep-dive textbook
+└── .github/workflows/   # CI, deploy, and frontend-deploy pipelines
 ```
 
----
+## Getting started
 
-## Local Development
-
-### Prerequisites
-
-| Tool | Version |
-|---|---|
-| Python | 3.12 |
-| uv | latest |
-| Node | 20+ (frontend only) |
-| Terraform | 1.10+ (infra only) |
-| Docker | 24+ (worker build only) |
-
-### Quick Start
+Prerequisites: Python 3.12, [uv](https://docs.astral.sh/uv/), Node.js 20+ (only needed for `web/`), and Docker if you want to build the worker image locally.
 
 ```bash
-# Clone
-git clone https://github.com/sathya-narayanan/wactl
+git clone https://github.com/sathya-narayanan/wactl.git
 cd wactl
 
-# Install Python dependencies
+# install Python dependencies
 uv sync
 
-# Run the full test suite (no AWS credentials needed)
-uv run pytest tests -q
+# copy and fill in environment variables
+cp .env.example .env
 
-# Lint + type-check
-uv run ruff check src tests worker lambda
-uv run mypy src worker lambda
+# run the test suite
+uv run pytest
 
-# Frontend
-cd web && npm install && npm run dev
+# lint and type-check
+uv run ruff check .
+uv run mypy src/wactl
 ```
 
-### Running the Worker Locally
-
-Against the real AWS queue:
+The unit tests don't need AWS credentials. Every AWS and HTTP call is mocked. To run the frontend locally:
 
 ```bash
-WACTL_ENV=dev \
-AWS_REGION=us-east-1 \
-WACTL_JOBS_QUEUE=https://sqs.us-east-1.amazonaws.com/<account>/wactl-dev-jobs \
-uv run python -m worker.main
+cd web
+npm install
+npm run dev
 ```
 
-Fully offline with mocked SQS:
+Deploying to a real AWS account requires Terraform:
 
 ```bash
-uv run pytest tests/integration/test_worker.py -q
+cd infra
+terraform init
+terraform plan
+terraform apply
 ```
 
----
+## Testing
+
+Around 230 tests run in about 10 seconds, with no live AWS calls or network requests anywhere in the suite. `moto` mocks AWS, `respx` mocks HTTP, and `freezegun` freezes time where TTL logic depends on it. Every command is tested by constructing a `CommandContext` with fake WhatsApp and S3 clients through dependency injection, so no test needs real credentials.
 
 ## Deployment
 
-See [`docs/SETUP.md`](docs/SETUP.md) for the full bootstrap guide. The short version:
+Three GitHub Actions workflows handle everything:
 
-1. **Apply Terraform** — `terraform apply -var env=prod -auto-approve`
-2. **Populate secrets** — WhatsApp access token, app secret, verify token
-3. **Build + upload** — Lambda zip + worker tarball to S3
-4. **Refresh the ASG** — Worker pulls the new tarball on next boot
-5. **Configure Meta webhook** — Register the API Gateway URL in the Meta Developer dashboard
-6. **Send `/help`** — Test the bot
+- `ci.yaml` runs ruff, mypy, and pytest on every push and pull request.
+- `deploy.yaml` builds the Lambda package and worker image, uploads them to S3, and runs `terraform apply` on pushes to `main`.
+- `deploy-frontend.yaml` builds and deploys the `web/` site to Vercel when files under `web/` change.
 
----
+CI authenticates to AWS through OIDC: GitHub issues a short-lived token that AWS exchanges for temporary credentials, so no long-lived AWS keys sit in GitHub secrets.
 
-## CI/CD
+## Security
 
-GitHub Actions handles the entire pipeline via OIDC (no long-lived AWS keys):
+- Every inbound webhook is verified against Meta's `X-Hub-Signature-256` HMAC header before it's processed.
+- IAM roles are scoped per component: the Lambda, the worker, and the CI pipeline each get only the permissions they need.
+- WhatsApp and Gemini credentials live in SSM Parameter Store as SecureStrings, never in code or plain environment files.
+- Both S3 buckets block all public access.
+- The webhook always returns 200 to Meta, even on internal failure, so retries don't leak details about what went wrong.
 
-| Workflow | Trigger | Steps |
-|---|---|---|
-| `ci.yaml` | Every push/PR | Lint (ruff) → Type-check (mypy) → Test (pytest) |
-| `deploy.yaml` | Push to `main` | Build Lambda zip → Build worker tarball → Upload to S3 → Terraform apply |
-| `deploy-frontend.yaml` | Push to `main` (web/ changes) | Deploy Next.js to Vercel |
+## Observability
 
-The OIDC provider + IAM role trust policy restricts the `sub` claim to `repo:sathya-narayanan/wactl:ref:refs/heads/main` — only the `main` branch can deploy.
+Every log line is a structured JSON object, queryable through CloudWatch Logs Insights instead of grepping plain text. Three CloudWatch alarms watch for a non-empty dead-letter queue, Lambda errors, and sustained worker CPU.
 
----
+## Cost
+
+The whole platform runs on a single EC2 `t4g.nano` instance (AWS free tier) plus a handful of Lambda invocations a day. At personal scale, that's under a dollar a month.
+
+## Contributing
+
+See `CONTRIBUTING.md` for conventions on branches, commits, and pull requests. New commands are the most common contribution: drop a file in `src/wactl/commands/`, register it with the `@register` decorator, add a test, and open a PR.
 
 ## License
 
-[MIT](LICENSE) © WACTL
+MIT. See `LICENSE`.

@@ -18,7 +18,7 @@ export default function PrivacyPage() {
         <ul className="mt-4 space-y-2 text-sm text-zinc-700 dark:text-zinc-300 list-disc pl-5">
           <li>
             <strong>WhatsApp metadata</strong> — your phone number, message
-            ID (<code>wamid</code>), and the Business number you DM'd.
+            ID (<code>wamid</code>), and the Business number you DM&apos;d.
           </li>
           <li>
             <strong>Media you send</strong> — PDFs, images, audio, video that
@@ -40,7 +40,7 @@ export default function PrivacyPage() {
         </h2>
         <ul className="mt-4 space-y-2 text-sm text-zinc-700 dark:text-zinc-300 list-disc pl-5">
           <li>
-            <strong>Dedup records</strong> — 7 days (matches Meta's retry
+            <strong>Dedup records</strong> — 7 days (matches Meta&apos;s retry
             window). Dropped automatically via DynamoDB TTL.
           </li>
           <li>

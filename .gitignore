@@ -49,3 +49,17 @@ build/
 # Temporary Files
 tmp/
 temp/
+
+# vercel
+web/.vercel
+.vercel
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+.terraform.lock.hcl
+
+# Local Claude Code state (kept on disk, not tracked)
+.claude/
