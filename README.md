@@ -74,7 +74,7 @@ Sync commands run inline in the Lambda and finish in a couple of seconds. Anythi
 
 WACTL runs across two compute surfaces (a webhook Lambda and a long-running EC2 worker), two storage surfaces (S3 for media, DynamoDB for webhook dedup) and one queue (SQS) in between. Fast commands are handled inline by the Lambda; slow ones are enqueued and drained by the worker. The WhatsApp Cloud API is the entry and exit point for every message.
 
-<!-- architecture diagram goes here -->
+![WACTL Architecture Diagram](docs/architectureV2.png)
 
 ## Tech stack
 
