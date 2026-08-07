@@ -1,5 +1,6 @@
 import { COMMANDS, WA_ME_LINK } from "@/lib/site";
 
+// hello world
 export const metadata = {
   title: "Docs — WACTL",
   description: "Full command reference for the WACTL WhatsApp bot.",
