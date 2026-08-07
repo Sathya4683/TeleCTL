@@ -3,6 +3,7 @@ export const metadata = {
   description: "What WACTL stores about you, and for how long.",
 };
 
+// meow hello world
 export default function PrivacyPage() {
   return (
     <main className="flex-1 px-6 py-16">
