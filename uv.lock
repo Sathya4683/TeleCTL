@@ -63,19 +63,6 @@ wheels = [
 ]
 
 [[package]]
-name = "beautifulsoup4"
-version = "4.15.0"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "soupsieve" },
-    { name = "typing-extensions" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/43/65/318323f98dbee45d42dff61d8f047181bc6f2268a9068cfad035a46be5af/beautifulsoup4-4.15.0.tar.gz", hash = "sha256:288e3ca7d54b06f2ac191970bc275c1939cb46d450b255bf6718b04aa37ab4f7", size = 632571, upload-time = "2026-06-07T16:44:20.453Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/88/c6/92fcd42f1ba33e1184263f25bfabf3d27c383410470f169e4b8163bf9c17/beautifulsoup4-4.15.0-py3-none-any.whl", hash = "sha256:d6f88de62e1d4e38ecb1077eb9724cd0eff29d2a08ca16a401e9b9e93f117cf9", size = 109924, upload-time = "2026-06-07T16:44:21.566Z" },
-]
-
-[[package]]
 name = "boto3"
 version = "1.43.45"
 source = { registry = "https://pypi.org/simple" }
@@ -731,19 +718,6 @@ wheels = [
 ]
 
 [[package]]
-name = "markdownify"
-version = "1.2.3"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "beautifulsoup4" },
-    { name = "six" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/92/ab/d1297139c0e2ceb151ae564c8c4f57ac0155d8f1f8b4cbd5d6523c82ea36/markdownify-1.2.3.tar.gz", hash = "sha256:1a176f05522c8a2cb1dd3ab9d307dcdadbed5c26ae717855bfc42b3b6d38d937", size = 18852, upload-time = "2026-06-30T20:27:39.06Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/04/10/fa543d484e8b1199243fe20eedd02cc5af050edebce98a7293a5773df592/markdownify-1.2.3-py3-none-any.whl", hash = "sha256:a189a0bedfd14009030fde5f85bb6f77c56897cb839b5c25315dd7d4e3e290ba", size = 15732, upload-time = "2026-06-30T20:27:38.094Z" },
-]
-
-[[package]]
 name = "markupsafe"
 version = "3.0.3"
 source = { registry = "https://pypi.org/simple" }
@@ -1281,15 +1255,6 @@ wheels = [
 ]
 
 [[package]]
-name = "pypdf"
-version = "5.9.0"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/89/3a/584b97a228950ed85aec97c811c68473d9b8d149e6a8c155668287cf1a28/pypdf-5.9.0.tar.gz", hash = "sha256:30f67a614d558e495e1fbb157ba58c1de91ffc1718f5e0dfeb82a029233890a1", size = 5035118, upload-time = "2025-07-27T14:04:52.364Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/48/d9/6cff57c80a6963e7dd183bf09e9f21604a77716644b1e580e97b259f7612/pypdf-5.9.0-py3-none-any.whl", hash = "sha256:be10a4c54202f46d9daceaa8788be07aa8cd5ea8c25c529c50dd509206382c35", size = 313193, upload-time = "2025-07-27T14:04:50.53Z" },
-]
-
-[[package]]
 name = "pytest"
 version = "8.4.2"
 source = { registry = "https://pypi.org/simple" }
@@ -1527,15 +1492,6 @@ wheels = [
 ]
 
 [[package]]
-name = "soupsieve"
-version = "2.8.4"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/47/2c/0a5f6f8ee0d5589e48c7640213ed5175d52cf540a06725b628cc1a45d6ce/soupsieve-2.8.4.tar.gz", hash = "sha256:e121fd02e975c695e4e9e8774a5ee35d74714b59307868dcc5319ad2d9e3328e", size = 121110, upload-time = "2026-05-24T13:55:57.154Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/5e/f5/0c41cb68dcae6b7de4fac4188a3a9589e21fb31df21ea3a2e888db95e6c9/soupsieve-2.8.4-py3-none-any.whl", hash = "sha256:e7e6b0769c8f51ed59acab6e994b00621096cfb1c640a7509295987388fbaf65", size = 37304, upload-time = "2026-05-24T13:55:55.406Z" },
-]
-
-[[package]]
 name = "structlog"
 version = "25.5.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1657,20 +1613,13 @@ name = "wactl"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
-    { name = "beautifulsoup4" },
     { name = "boto3", extra = ["crt"] },
     { name = "botocore" },
-    { name = "google-genai" },
     { name = "httpx" },
-    { name = "lxml" },
-    { name = "markdownify" },
     { name = "pdf2docx" },
     { name = "pillow" },
     { name = "pydantic" },
     { name = "pydantic-settings" },
-    { name = "pydub" },
-    { name = "pymupdf" },
-    { name = "pypdf" },
     { name = "python-dotenv" },
     { name = "structlog" },
     { name = "tenacity" },
@@ -1692,23 +1641,21 @@ dev = [
     { name = "types-beautifulsoup4" },
     { name = "types-pyyaml" },
 ]
+worker = [
+    { name = "google-genai" },
+    { name = "pydub" },
+    { name = "pymupdf" },
+]
 
 [package.metadata]
 requires-dist = [
-    { name = "beautifulsoup4", specifier = ">=4.12,<5.0" },
     { name = "boto3", extras = ["crt"], specifier = ">=1.35,<2.0" },
     { name = "botocore", specifier = ">=1.35,<2.0" },
-    { name = "google-genai", specifier = ">=1.0,<3.0" },
     { name = "httpx", specifier = ">=0.27,<1.0" },
-    { name = "lxml", specifier = ">=5.2,<6.0" },
-    { name = "markdownify", specifier = ">=0.13,<2.0" },
     { name = "pdf2docx", specifier = ">=0.5,<1.0" },
     { name = "pillow", specifier = ">=10.4,<12.0" },
     { name = "pydantic", specifier = ">=2.7,<3.0" },
     { name = "pydantic-settings", specifier = ">=2.4,<3.0" },
-    { name = "pydub", specifier = ">=0.25,<1.0" },
-    { name = "pymupdf", specifier = ">=1.24,<2.0" },
-    { name = "pypdf", specifier = ">=4.3,<6.0" },
     { name = "python-dotenv", specifier = ">=1.0,<2.0" },
     { name = "structlog", specifier = ">=24.1,<26.0" },
     { name = "tenacity", specifier = ">=8.3,<10.0" },
@@ -1729,6 +1676,11 @@ dev = [
     { name = "ruff", specifier = ">=0.6,<1.0" },
     { name = "types-beautifulsoup4", specifier = ">=4.12,<5.0" },
     { name = "types-pyyaml", specifier = ">=6.0,<7.0" },
+]
+worker = [
+    { name = "google-genai", specifier = ">=1.0,<3.0" },
+    { name = "pydub", specifier = ">=0.25,<1.0" },
+    { name = "pymupdf", specifier = ">=1.24,<2.0" },
 ]
 
 [[package]]

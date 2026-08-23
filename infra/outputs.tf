@@ -1,6 +1,6 @@
 output "api_gateway_url" {
-  description = "Webhook URL — register this with the Telegram setWebhook API. The $default stage is auto-managed, so we read api_endpoint directly off the API."
-  value       = "${aws_apigatewayv2_api.webhook.api_endpoint}/telegram/webhook"
+  description = "Webhook URL — register this with the Telegram setWebhook API. Includes the explicit ``dev`` stage because the route is not deployed to the auto-managed $default stage in this configuration."
+  value       = "${aws_apigatewayv2_api.webhook.api_endpoint}/dev/telegram/webhook"
 }
 
 output "sqs_jobs_queue_url" {

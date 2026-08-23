@@ -26,15 +26,17 @@ resource "aws_apigatewayv2_route" "webhook_post" {
   target    = "integrations/${aws_apigatewayv2_integration.webhook.id}"
 }
 
-# NOTE: HTTP API v2 auto-creates and auto-manages a ``$default`` stage for
-# every API. Explicitly creating it via ``aws_apigatewayv2_stage`` with
-# ``name = "$default"`` fails at apply with ``ConflictException: Stage
-# already exists``. We omit the stage resource and read the invoke URL
-# from ``aws_apigatewayv2_api.webhook.api_endpoint`` in outputs.tf.
-#
-# Reference: https://docs.aws.amazon.com/apigateway/latest/developerguide/http-api-stages.html
-# ("If you created an API using quick create, the $default stage is managed
-#  by API Gateway. You can't modify the $default stage.")
+# Explicit stage named ``dev`` (NOT ``$default`` — that conflicts with
+# the auto-managed stage and was the cause of the initial 404 on
+# Telegram webhooks). The webhook URL in outputs.tf targets the
+# ``$default`` stage implicitly, so we keep both routes accessible.
+resource "aws_apigatewayv2_stage" "dev" {
+  api_id      = aws_apigatewayv2_api.webhook.id
+  name        = "dev"
+  auto_deploy = true
+
+  tags = local.tags
+}
 
 resource "aws_lambda_permission" "apigw_invoke" {
   statement_id  = "AllowAPIGatewayInvoke"

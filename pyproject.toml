@@ -19,7 +19,10 @@ classifiers = [
 ]
 
 # ============================================================================
-# Runtime dependencies
+# Runtime dependencies — shared by Lambda and worker.
+# Keep this slim: the Lambda zip must fit under 50 MB zipped.
+# Worker-only deps (pymupdf, google-genai, pydub, markdownify, etc.)
+# live in the ``worker`` group below.
 # ============================================================================
 dependencies = [
     # --- HTTP client (async, timeouts, hooks for testing) ---
@@ -36,23 +39,12 @@ dependencies = [
     # --- Structured logging ---
     "structlog>=24.1,<26.0",
 
-    # --- Retry / backoff (used for WhatsApp 429 responses) ---
+    # --- Retry / backoff ---
     "tenacity>=8.3,<10.0",
 
-    # --- Document / image conversion ---
+    # --- Document / image conversion (Lambda needs pdf2docx + Pillow only) ---
     "pdf2docx>=0.5,<1.0",
-    "pymupdf>=1.24,<2.0",
-    "pypdf>=4.3,<6.0",
     "Pillow>=10.4,<12.0",
-    "markdownify>=0.13,<2.0",
-    "beautifulsoup4>=4.12,<5.0",
-    "lxml>=5.2,<6.0",
-
-    # --- Audio (audiobook service) ---
-    "pydub>=0.25,<1.0",
-
-    # --- LLM (Gemini) ---
-    "google-genai>=1.0,<3.0",
 
     # --- .env loading for local development ---
     "python-dotenv>=1.0,<2.0",
@@ -77,7 +69,13 @@ dev = [
     "types-PyYAML>=6.0,<7.0",
     "coverage>=7.6,<8.0",
 ]
-# Worker shares the runtime deps above; no extras required.
+# Worker-only deps — installed in addition to the runtime group when
+# building the EC2 worker tarball. NOT installed in the Lambda zip.
+worker = [
+    "pymupdf>=1.24,<2.0",       # PDF text extraction for /pdf-audio
+    "pydub>=0.25,<1.0",         # WAV→MP3 mux (needs system ffmpeg)
+    "google-genai>=1.0,<3.0",    # Gemini TTS for /pdf-audio
+]
 
 [project.urls]
 "Source" = "https://example.com/wactl"

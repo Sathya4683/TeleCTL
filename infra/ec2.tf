@@ -40,7 +40,7 @@ resource "aws_security_group" "worker" {
 # after the instance boots.
 data "cloudinit_config" "worker" {
   gzip          = false
-  base64_encode = false
+  base64_encode = true
 
   part {
     filename     = "wactl-worker.cfg"
@@ -132,7 +132,9 @@ data "cloudinit_config" "worker" {
 resource "aws_launch_template" "worker" {
   name_prefix   = "${local.suffix}-worker-"
   image_id      = data.aws_ami.al2023_arm64.id
-  instance_type = "t4g.nano"
+  # t4g.micro (1 GB RAM, 2 vCPU, arm64) is the free-tier-eligible size in
+  # ap-south-1 — ``t4g.nano`` isn't eligible in this region/account.
+  instance_type = "t4g.micro"
   user_data     = data.cloudinit_config.worker.rendered
 
   vpc_security_group_ids = [aws_security_group.worker.id]

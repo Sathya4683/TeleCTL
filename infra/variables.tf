@@ -44,3 +44,9 @@ variable "gemini_api_key" {
   sensitive   = true
   default     = ""
 }
+
+variable "lambda_image_tag" {
+  description = "ECR image tag to use for the webhook Lambda container. Update this when you push a new image (e.g. \"latest\" or a git SHA)."
+  type        = string
+  default     = "latest"
+}

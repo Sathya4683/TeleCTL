@@ -53,12 +53,26 @@ class TelegramClient:
         api_base: str = API_BASE,
         timeout_seconds: float = 30.0,
         client: httpx.AsyncClient | None = None,
+        client_owned: bool = True,
     ) -> None:
+        """Construct the client.
+
+        ``client_owned`` defaults to ``True`` — when this is the case the
+        client is closed on ``aclose()``. Pass ``False`` from tests that
+        share an ``httpx.AsyncClient`` across instances.
+
+        On Lambda, the container is reused across invocations but the
+        event loop is recreated per request, so the previous httpx
+        client's loop is dead. We lazily recreate the client on every
+        call to keep things robust.
+        """
         if not bot_token:
             raise ValueError("TelegramClient requires a non-empty bot_token")
         self._token = bot_token
         self._api_base = api_base.rstrip("/")
-        self._client = client or httpx.AsyncClient(timeout=timeout_seconds)
+        self._timeout = timeout_seconds
+        self._client = client
+        self._client_owned = client_owned
 
     @property
     def api_base(self) -> str:
@@ -80,10 +94,24 @@ class TelegramClient:
     def _url(self, method: str) -> str:
         return f"{self._api_base}/bot{self._token}/{method}"
 
+    def _http(self) -> httpx.AsyncClient:
+        """Lazily build (or rebuild) the underlying HTTP client.
+
+        On Lambda, the event loop is recreated per request while the
+        container (and our ``TelegramClient`` instance) is reused. The
+        ``httpx.AsyncClient`` bound to the previous loop throws
+        ``RuntimeError: Event loop is closed``. Recreating the client on
+        every call is cheap and sidesteps the issue.
+        """
+        if self._client is None or self._client.is_closed:
+            self._client = httpx.AsyncClient(timeout=self._timeout)
+            self._client_owned = True
+        return self._client
+
     async def _post(self, method: str, payload: dict[str, Any]) -> TelegramResponse:
         """POST a JSON payload, return the parsed envelope."""
         url = self._url(method)
-        resp = await self._client.post(url, json=payload)
+        resp = await self._http().post(url, json=payload)
         resp.raise_for_status()
         data = resp.json()
         envelope = TelegramResponse.model_validate(data)
@@ -97,7 +125,7 @@ class TelegramClient:
     async def _get(self, method: str, params: dict[str, Any] | None = None) -> TelegramResponse:
         """GET a method, return the parsed envelope."""
         url = self._url(method)
-        resp = await self._client.get(url, params=params or {})
+        resp = await self._http().get(url, params=params or {})
         resp.raise_for_status()
         data = resp.json()
         envelope = TelegramResponse.model_validate(data)
@@ -132,7 +160,7 @@ class TelegramClient:
 
     async def download_file(self, file_path: str) -> bytes:
         """Download bytes for a Telegram file path returned by ``getFile``."""
-        resp = await self._client.get(self.file_url(file_path))
+        resp = await self._http().get(self.file_url(file_path))
         resp.raise_for_status()
         return resp.content
 

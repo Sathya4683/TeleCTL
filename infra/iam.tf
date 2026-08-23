@@ -34,6 +34,20 @@ data "aws_iam_policy_document" "lambda_policy" {
   }
 
   statement {
+    sid       = "EcrPull"
+    effect    = "Allow"
+    actions   = ["ecr:GetDownloadUrlForLayer", "ecr:BatchGetImage", "ecr:BatchCheckLayerAvailability"]
+    resources = ["arn:aws:ecr:${var.region}:${local.account_id}:repository/${local.suffix}-webhook"]
+  }
+
+  statement {
+    sid       = "EcrAuth"
+    effect    = "Allow"
+    actions   = ["ecr:GetAuthorizationToken"]
+    resources = ["*"]
+  }
+
+  statement {
     sid       = "MediaBucket"
     effect    = "Allow"
     actions   = ["s3:GetObject", "s3:PutObject", "s3:DeleteObject"]
