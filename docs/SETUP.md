@@ -1,8 +1,8 @@
-# WACTL — Setup guide
+# WACTL — Setup guide (Telegram bot)
 
 This guide walks you through bringing WACTL from zero to a live
-WhatsApp bot. Expect about an hour if your AWS account and Meta
-Developer account are already in place.
+Telegram bot. Expect about 45 minutes if your AWS account and
+Telegram bot are already in place.
 
 ---
 
@@ -12,17 +12,15 @@ Developer account are already in place.
 |-----------|---------|--------------------------------------|
 | Python    | 3.12    | matches `.python-version`            |
 | uv        | latest  | `pip install uv`                     |
-| Node      | 20+     | only for the frontend                |
 | Terraform | 1.10+   | `brew install tfenv && tfenv install`|
 | AWS CLI   | v2      | configured with a sandbox admin user |
 | Docker    | 24+     | only for building the worker tarball |
 
 You'll also need:
 
-- An **AWS account** with a sandbox admin IAM user (for the first
-  `terraform apply`).
-- A **Meta Developer account** with a WhatsApp Business app + a System
-  User access token.
+- An **AWS account** with a sandbox admin IAM user (for the first `terraform apply`).
+- A **Telegram account** + a bot created via [@BotFather](https://t.me/BotFather).
+- A **Google Gemini API key** (free tier) if you want `/pdf-audio`.
 
 ---
 
@@ -34,9 +32,6 @@ cd wactl
 
 # Python deps + virtualenv (managed by uv)
 uv sync
-
-# Frontend deps
-cd web && npm install && cd ..
 ```
 
 Run the test suite — it should pass with zero AWS credentials:
@@ -47,87 +42,71 @@ uv run pytest tests -q
 
 ---
 
-## 2. Bootstrap the Terraform state bucket
+## 2. Create your Telegram bot
 
-Terraform state lives in S3. Create the bucket **once** by hand:
-
-```bash
-export AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
-aws s3api create-bucket \
-  --bucket wactl-tf-state-${AWS_ACCOUNT_ID} \
-  --region us-east-1 \
-  --create-bucket-configuration LocationConstraint=us-east-1
-aws s3api put-bucket-versioning \
-  --bucket wactl-tf-state-${AWS_ACCOUNT_ID} \
-  --versioning-configuration Status=Enabled
-```
+1. Open Telegram and message [@BotFather](https://t.me/BotFather).
+2. Send `/newbot`. Pick a display name and a username ending in `bot`.
+3. Copy the **bot token** — it looks like `123456:ABCDEF...`. You'll pass it to Terraform later.
+4. (Optional, recommended.) Send `/setdomain` if you own a domain; otherwise skip.
+5. (Optional.) Send `/setprivacy` → **Disable** so the bot can read commands in groups. Skip if you only use private chats.
 
 ---
 
-## 3. Apply Terraform
+## 3. Get a Gemini API key (only needed for `/pdf-audio`)
+
+1. Visit <https://aistudio.google.com/app/apikey> and create an API key.
+2. Free tier covers personal-scale usage (~15 requests/min, 1500/day).
+
+Skip this if you don't care about `/pdf-audio` — the rest of the bot works fine without it.
+
+---
+
+## 4. Apply Terraform
+
+State is local (`infra/terraform.tfstate`) — no S3 bootstrap needed.
 
 ```bash
 cd infra
-terraform init \
-  -backend-config="bucket=wactl-tf-state-${AWS_ACCOUNT_ID}" \
-  -backend-config="region=us-east-1"
-terraform plan -var env=dev
-terraform apply -var env=dev -auto-approve
+
+# (One-time, optional.) Format and validate the configuration.
+terraform fmt -recursive
+terraform validate
+
+# Apply with your secrets as vars. Do NOT commit these to git.
+export TELEGRAM_BOT_TOKEN=123456:ABCDEF...
+export TELEGRAM_WEBHOOK_SECRET_TOKEN=$(openssl rand -hex 32)
+export GEMINI_API_KEY=AIza...
+
+terraform init
+terraform apply \
+  -var "telegram_bot_token=${TELEGRAM_BOT_TOKEN}" \
+  -var "telegram_webhook_secret_token=${TELEGRAM_WEBHOOK_SECRET_TOKEN}" \
+  -var "gemini_api_key=${GEMINI_API_KEY}"
 ```
 
 Resources created:
 
-- 1× REST API + 1 stage + 1 deployment + 2 methods (GET verify, POST).
-- 1× Lambda function (Python 3.12, x86_64, 512 MB).
-- 1× SQS queue + 1× DLQ.
+- 1× HTTP API Gateway v2 + stage + 1 route (`POST /telegram/webhook`).
+- 1× Lambda function (Python 3.12, x86_64, 512 MB, 300 s timeout).
+- 1× SQS FIFO queue + 1× FIFO DLQ.
 - 1× DynamoDB table (pay-per-request, TTL on `expires_at`).
 - 1× S3 media bucket + 1× releases bucket.
-- 3× Secrets Manager secrets (placeholders).
-- 1× EC2 launch template + ASG (1 instance).
-- 4× CloudWatch log groups + 3 alarms.
-- 1× IAM OpenID Connect Provider + 3× IAM roles.
+- 1× EC2 launch template + ASG (1 × t4g.nano).
+- 2× CloudWatch log groups (Lambda + worker).
+- 2× IAM roles (Lambda exec, EC2 worker).
 
-Note the output `api_gateway_url` — that's what you'll register with
-Meta in step 6.
-
----
-
-## 4. Populate the secrets
-
-The three secrets have placeholder values. Replace them with real ones:
-
-```bash
-export WA_PHONE_ID=...            # your WhatsApp phone-number ID
-export WA_ACCESS_TOKEN=...        # system-user token (long-lived)
-export WA_APP_SECRET=...          # from "App Settings" → "Webhook"
-export WA_VERIFY_TOKEN=$(openssl rand -hex 32)
-
-aws secretsmanager put-secret-value \
-  --secret-id wactl/dev/whatsapp/access-token \
-  --secret-string "$WA_ACCESS_TOKEN"
-
-aws secretsmanager put-secret-value \
-  --secret-id wactl/dev/whatsapp/app-secret \
-  --secret-string "$WA_APP_SECRET"
-
-aws secretsmanager put-secret-value \
-  --secret-id wactl/dev/whatsapp/verify-token \
-  --secret-string "$WA_VERIFY_TOKEN"
-```
-
-Keep `$WA_VERIFY_TOKEN` somewhere safe — Meta echoes it during the
-webhook handshake and you'll paste it into the dashboard.
+Note the output `api_gateway_url` — that's what you'll register with Telegram in step 6.
 
 ---
 
 ## 5. Build & upload the Lambda + worker
 
-The Lambda needs a deployable zip; the worker runs from a tarball that
-the EC2 cloud-init downloads. Build both:
+The Lambda needs a deployable zip; the worker runs from a tarball that the EC2 cloud-init downloads. Build both:
 
 ```bash
-# Lambda zip
 cd ..
+
+# Lambda zip
 rm -rf build/lambda packages
 mkdir -p build/lambda
 uv export --frozen --no-hashes --format requirements-txt > /tmp/requirements.txt
@@ -137,99 +116,124 @@ uv pip install \
   --no-cache --no-compile-bytecode \
   -r /tmp/requirements.txt
 cp -r src/wactl build/lambda/packages/wactl
+cp -r lambda/webhook build/lambda/lambda
 (cd build/lambda/packages && zip -qr ../../lambda.zip .)
-(cd build/lambda && zip -qr ../lambda.zip lambda)
+(cd build/lambda/lambda && zip -qr ../../lambda.zip .)
 
+ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
 aws s3 cp build/lambda.zip \
-  s3://wactl-dev-releases-${AWS_ACCOUNT_ID}/lambda.zip
+  "s3://wactl-dev-releases-${ACCOUNT_ID}/lambda.zip"
 
 # Worker tarball (requires Docker)
 bash worker/build.sh
 aws s3 cp dist/worker.tar.gz \
-  s3://wactl-dev-releases-${AWS_ACCOUNT_ID}/worker.tar.gz
+  "s3://wactl-dev-releases-${ACCOUNT_ID}/worker.tar.gz"
 ```
 
-After upload, refresh the worker ASG so the new tarball is pulled:
+The worker ASG will refresh on the next instance launch (or you can force it):
 
 ```bash
 aws autoscaling start-instance-refresh \
   --auto-scaling-group-name wactl-dev-worker
 ```
 
+For the Lambda code change, update the function code directly:
+
+```bash
+aws lambda update-function-code \
+  --function-name wactl-dev-webhook \
+  --s3-bucket "wactl-dev-releases-${ACCOUNT_ID}" \
+  --s3-key lambda.zip
+```
+
 ---
 
-## 6. Configure the WhatsApp webhook
+## 6. Register the webhook with Telegram
 
-In the Meta Developer dashboard:
+Get the API Gateway URL from Terraform:
 
-1. **App → WhatsApp → Configuration → Webhook → Edit**
-2. **Callback URL**: the `api_gateway_url` from `terraform output`
-3. **Verify Token**: the `$WA_VERIFY_TOKEN` you generated above
-4. **Webhook fields**: subscribe to `messages`
-5. Click **Verify and save**
+```bash
+cd infra && terraform output -raw api_gateway_url
+```
 
-If verification fails: check CloudWatch Logs at
-`/aws/lambda/wactl-dev-webhook` — the most common cause is an
-app-secret mismatch.
+Then register it with Telegram (one-time, manual):
+
+```bash
+WEBHOOK_URL=$(terraform output -raw api_gateway_url)
+SECRET="your-webhook-secret-token-here"
+
+curl -X POST \
+  "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/setWebhook" \
+  -H "Content-Type: application/json" \
+  -d "{\"url\": \"${WEBHOOK_URL}\", \"secret_token\": \"${SECRET}\"}"
+```
+
+If you didn't set `TELEGRAM_WEBHOOK_SECRET_TOKEN` in Terraform, omit the `secret_token` field.
+
+Verify:
+
+```bash
+curl "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/getWebhookInfo"
+```
+
+You should see your URL listed with `pending_update_count = 0`.
 
 ---
 
 ## 7. Send your first message
 
-Open WhatsApp, DM the business number, send `/help`. You should receive
-a list of available commands within a second. Try `/image-resize
-1024x768` with any photo attached.
+Open Telegram, DM your bot, send `/help`. You should receive a list
+of 5 commands within a second:
+
+- `/help` — show this message
+- `/image-resize WxH` — resize an attached photo
+- `/image-compress q=70 max=1600` — recompress an attached photo
+- `/pdf-docx` — convert an attached PDF into a Word document
+- `/pdf-audio` — convert an attached PDF into an MP3 audiobook
+
+Try `/image-resize 800x600` with any photo attached.
 
 ---
 
-## 8. Run the worker locally (optional)
+## 8. IAM role setup (already created by Terraform)
 
-For dev iteration, you can run the worker against the real AWS queue:
+Terraform creates these IAM roles automatically:
+
+- `wactl-dev-lambda-exec` — assumed by the webhook Lambda. Permissions:
+  S3 RW on the media bucket, DynamoDB RW on the dedup table, SQS send
+  on the jobs FIFO queue, CloudWatch Logs.
+- `wactl-dev-worker` — instance role assumed by the EC2 worker. Permissions:
+  SQS consume on the jobs FIFO queue, S3 RW on the media bucket, S3 read
+  on the releases bucket (for cloud-init tarball download), CloudWatch Logs,
+  Session Manager (`AmazonSSMManagedInstanceCore`).
+
+To inspect:
 
 ```bash
-WACTL_ENV=dev \
-AWS_REGION=us-east-1 \
-WACTL_JOBS_QUEUE=https://sqs.us-east-1.amazonaws.com/${AWS_ACCOUNT_ID}/wactl-dev-jobs \
+aws iam get-role --role-name wactl-dev-lambda-exec
+aws iam get-role --role-name wactl-dev-worker
+```
+
+To shell into the worker:
+
+```bash
+aws ssm start-session --target "$(aws ec2 describe-instances \
+  --filters "Name=tag:Name,Values=wactl-dev-worker" \
+  --query "Reservations[0].Instances[0].InstanceId" --output text)"
+```
+
+---
+
+## 9. Run the worker locally (optional)
+
+For dev iteration, run the worker against the real AWS queue:
+
+```bash
 uv run python -m worker.main
 ```
 
-Or, fully offline with mocked SQS:
-
-```bash
-uv run pytest tests/integration/test_worker.py -q
-```
-
----
-
-## 9. Frontend (Vercel)
-
-The `web/` directory is a standalone Next.js 16 app. To deploy:
-
-```bash
-cd web
-npx vercel deploy --prod
-```
-
-Set the environment variable `NEXT_PUBLIC_WA_ME_LINK` to your
-business-number wa.me URL. (Default in `lib/site.ts` is a placeholder.)
-
----
-
-## 10. CI/CD (GitHub Actions)
-
-Add one repository secret:
-
-| Name              | Value                              |
-|-------------------|------------------------------------|
-| `AWS_ACCOUNT_ID`  | your 12-digit AWS account id       |
-
-That's it. Push to `main` and:
-
-1. `ci.yaml` runs lint + mypy + tests.
-2. `deploy.yaml` builds the Lambda + worker, uploads them to S3, then
-   runs `terraform apply` using the OIDC role from step 3.
-
-No long-lived AWS keys are ever stored in the repo.
+Environment variables `TELEGRAM_BOT_TOKEN`, `GEMINI_API_KEY`, `SQS_JOBS_QUEUE_URL`,
+`AWS_REGION` need to be set in your shell or `.env`.
 
 ---
 
@@ -237,15 +241,16 @@ No long-lived AWS keys are ever stored in the repo.
 
 | Symptom | Likely cause | Fix |
 |---------|-------------|-----|
-| Webhook verify fails | App secret mismatch | Re-populate `wactl/<env>/whatsapp/app-secret`. |
-| Messages received but no reply | Worker not running | Check `/wactl/<env>/worker` log group. |
-| Lambda timeout on async command | Command registered `sync=False` | Should be expected — Lambda replies instantly, worker does the work. |
-| DLQ depth alarm fires | Repeated failures | Inspect the message body in SQS console. |
-| `terraform apply` errors on OIDC provider | Already exists from prior run | `terraform import` it; or check `aws_iam_openid_connect_provider` in the console. |
+| Telegram says "webhook not set" | `setWebhook` call failed or bot token wrong | Re-run `curl .../setWebhook` with the correct token. |
+| Telegram returns "Unauthorized" on every message | Bot token mismatch between Lambda env and what you registered with | Re-deploy with the right `TELEGRAM_BOT_TOKEN`. |
+| Lambda returns 401 | `X-Telegram-Bot-Api-Secret-Token` mismatch | Make sure the `secret_token` you set on `setWebhook` matches the Lambda env var. |
+| `/pdf-audio` returns nothing | EC2 worker not running | Check ASG in EC2 console; check `/wactl/wactl-dev/worker` log group. |
+| SQS messages piling up | Worker stuck or crashed | Check worker logs; check the DLQ. |
+| `terraform apply` errors | Local state out of sync | `terraform plan` first; check for stale resources to import or destroy. |
 
 ---
 
 ## What's next?
 
-- `docs/CODEBASE_GUIDE.md` — architecture tour for engineers.
-- The GitHub repo's issues — feature requests and known limitations.
+- The other 5 commands (`merge-pdf`, `split-pdf`, `translate`, `web-summary`, `github-pr`) are still in the codebase — just not imported. To re-enable, add the import back to `src/wactl/commands/__init__.py` and (for sync commands) flip `sync=True` in the `@register` decorator.
+- See `docs/telegram-cheatsheet.md` for the full Bot API reference.
