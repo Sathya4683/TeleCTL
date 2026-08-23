@@ -13,13 +13,12 @@ ENV PIP_DISABLE_PIP_VERSION_CHECK=1 \
 
 WORKDIR /src
 
-# System deps required to build wheels for some Python packages.
+# System deps required to build wheels for our Python packages.
+# - libffi-dev, zlib1g-dev: Pillow + pymupdf wheels.
+# - ffmpeg: pydub uses ffmpeg for WAV→MP3 export (audiobook pipeline).
 RUN apt-get update && apt-get install -y --no-install-recommends \
         build-essential \
-        libxml2-dev \
-        libxslt1-dev \
         libffi-dev \
-        libjpeg-dev \
         zlib1g-dev \
         ffmpeg \
     && rm -rf /var/lib/apt/lists/*
