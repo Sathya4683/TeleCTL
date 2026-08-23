@@ -4,7 +4,7 @@ This file is intentionally tiny — everything lives in
 :mod:`wactl.webhook`. The handler is the only stable contract between
 API Gateway + this codebase.
 
-Lambda event shape (API Gateway HTTP API v2 proxy):
+Lambda event shape (API Gateway HTTP API v2 proxy, ``payload_format_version = "2.0"``):
 
     {
         "version": "2.0",
@@ -14,9 +14,8 @@ Lambda event shape (API Gateway HTTP API v2 proxy):
         "isBase64Encoded": false
     }
 
-We accept both the v2 envelope (``requestContext.http.method``) and the
-older REST proxy envelope (``httpMethod``) so the handler works with
-either API Gateway type.
+For HTTP API v2 the body always arrives in ``event["body"]`` (string for
+JSON payloads, base64-encoded only if the content type is binary).
 """
 
 from __future__ import annotations
@@ -40,11 +39,6 @@ def _get_deps() -> Any:
 
 def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
     """Wrap :func:`wactl.webhook.handle` for the Lambda runtime."""
-    # API Gateway HTTP API v2 puts the body in rawBody; map to the shape
-    # :func:`wactl.webhook.handle` expects (which already understands
-    # both v1 ``body`` and v2 ``body``).
-    if "body" not in event and "rawBody" in event:
-        event = {**event, "body": event["rawBody"]}
     return wactl_handle(event, context, deps=_get_deps())
 
 

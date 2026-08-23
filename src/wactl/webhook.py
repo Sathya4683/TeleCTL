@@ -11,9 +11,10 @@ webhook event. It performs, in order:
    DynamoDB so retries don't double-process.
 4. **Route + dispatch** — for text messages, look up the command and
    either run it inline (sync) or enqueue a job (async).
-5. **Always return 200** — Telegram does not auto-retry on non-200 the way
-   Meta does, but we still swallow internal errors at the boundary so we
-   never leak stack traces.
+5. **Always return 200** — Telegram DOES retry on non-2xx (up to 8
+   attempts with exponential backoff over ~30 min). We still swallow
+   internal errors at the boundary so a permanently-bad Update doesn't
+   spam Telegram's retry loop.
 
 The function is intentionally synchronous-callable by both ``asyncio.run``
 (Lambda) and direct invocation (tests).
@@ -100,11 +101,20 @@ def build_deps() -> WebhookDeps:
 
         http = httpx.AsyncClient(timeout=settings.http_timeout_seconds)
 
+    # SQS client is needed only for /pdf-audio (the only async command). We
+    # build it lazily only when the queue URL is configured, so the Lambda
+    # container can cold-start quickly when no /pdf-audio jobs are expected.
+    sqs = None
+    if settings.sqs_jobs_queue_url:
+        from wactl.integrations.aws import sqs as _sqs  # noqa: PLC0415
+
+        sqs = _sqs
+
     return WebhookDeps(
         telegram=telegram,
         http=http,
         s3=None,
-        sqs=None,
+        sqs=sqs,
     )
 
 
@@ -188,6 +198,10 @@ async def _process_message(
                 http=deps.http,
                 s3=deps.s3,
                 secrets=None,
+                media_id=parsed.media_id,
+                media_mime=parsed.media_mime,
+                media_filename=parsed.media_filename,
+                raw_body=body,
             )
             logger.info(
                 "command.sync.complete",
@@ -200,6 +214,9 @@ async def _process_message(
                 user=user,
                 sqs=deps.sqs,
                 queue_url=settings.sqs_jobs_queue_url,
+                media_id=parsed.media_id,
+                media_mime=parsed.media_mime,
+                media_filename=parsed.media_filename,
                 message_group_id=str(user.chat_id),
             )
             logger.info("command.async.enqueued", command=routed.name)

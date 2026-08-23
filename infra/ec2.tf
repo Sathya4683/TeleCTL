@@ -109,19 +109,21 @@ data "cloudinit_config" "worker" {
       #cloud-config
       write_files:
         - path: /etc/wactl/worker.env
-          permissions: '0600'
-          owner: root:root
+          # Owned by root:wactl, mode 0640, so the systemd service (User=wactl)
+          # can read the secrets but the wactl group can't accidentally share.
+          permissions: '0640'
+          owner: root:wactl
           content: |
-            WACTL_ENV=${var.env}
+            ENV=${var.env}
             AWS_REGION=${var.region}
-            WACTL_JOBS_QUEUE=${aws_sqs_queue.jobs.url}
-            WACTL_S3_MEDIA_BUCKET=${aws_s3_bucket.media.bucket}
-            WACTL_DYNAMODB_DEDUP_TABLE=${aws_dynamodb_table.dedup.name}
+            SQS_JOBS_QUEUE_URL=${aws_sqs_queue.jobs.url}
+            S3_MEDIA_BUCKET=${aws_s3_bucket.media.bucket}
+            DYNAMODB_DEDUP_TABLE=${aws_dynamodb_table.dedup.name}
             TELEGRAM_BOT_TOKEN=${var.telegram_bot_token}
             GEMINI_API_KEY=${var.gemini_api_key}
       runcmd:
-        - chmod 0600 /etc/wactl/worker.env
-        - chown root:root /etc/wactl/worker.env
+        - chmod 0640 /etc/wactl/worker.env
+        - chown root:wactl /etc/wactl/worker.env
         - systemctl restart wactl-worker.service || true
     EOT
   }

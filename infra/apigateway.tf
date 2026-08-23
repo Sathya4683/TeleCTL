@@ -26,13 +26,15 @@ resource "aws_apigatewayv2_route" "webhook_post" {
   target    = "integrations/${aws_apigatewayv2_integration.webhook.id}"
 }
 
-resource "aws_apigatewayv2_stage" "webhook" {
-  api_id      = aws_apigatewayv2_api.webhook.id
-  name        = "$default"
-  auto_deploy = true
-
-  tags = local.tags
-}
+# NOTE: HTTP API v2 auto-creates and auto-manages a ``$default`` stage for
+# every API. Explicitly creating it via ``aws_apigatewayv2_stage`` with
+# ``name = "$default"`` fails at apply with ``ConflictException: Stage
+# already exists``. We omit the stage resource and read the invoke URL
+# from ``aws_apigatewayv2_api.webhook.api_endpoint`` in outputs.tf.
+#
+# Reference: https://docs.aws.amazon.com/apigateway/latest/developerguide/http-api-stages.html
+# ("If you created an API using quick create, the $default stage is managed
+#  by API Gateway. You can't modify the $default stage.")
 
 resource "aws_lambda_permission" "apigw_invoke" {
   statement_id  = "AllowAPIGatewayInvoke"

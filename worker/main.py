@@ -19,8 +19,11 @@ Environment variables
 - ``TELEGRAM_BOT_TOKEN``   Bot token from @BotFather (required)
 - ``GEMINI_API_KEY``        Gemini TTS API key (required)
 - ``AWS_REGION``            AWS region (default: ``us-east-1``)
-- ``WACTL_JOBS_QUEUE``      Jobs SQS FIFO queue URL (required)
-- ``WACTL_S3_MEDIA_BUCKET`` Media bucket for output MP3s (required)
+- ``SQS_JOBS_QUEUE_URL``    Jobs SQS FIFO queue URL (required)
+- ``S3_MEDIA_BUCKET``       Media bucket for output MP3s (required)
+
+The systemd unit sources these from ``/etc/wactl/worker.env`` (see
+``infra/ec2.tf``). For local dev, set them in your shell or ``.env``.
 """
 
 from __future__ import annotations
