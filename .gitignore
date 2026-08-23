@@ -63,3 +63,6 @@ web/.vercel
 
 # Local Claude Code state (kept on disk, not tracked)
 .claude/
+
+# Local-only bot secrets (token issued by @BotFather, never commit).
+docs/telegram-secrets.md
