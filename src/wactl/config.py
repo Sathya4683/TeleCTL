@@ -3,9 +3,9 @@
 All environment variables are read here. Application code MUST NOT call
 ``os.getenv(...)`` directly — use :data:`settings`.
 
-Secrets are referenced by SSM Parameter Store name (SecureString). The
-actual value is fetched lazily via :mod:`wactl.integrations.aws.secrets`
-and cached.
+Telegram-specific values (bot token, webhook secret token) live as plain
+environment variables on the Lambda / EC2 instance — no Secrets Manager /
+SSM Parameter Store. Free-tier friendly and one less moving part.
 """
 
 from __future__ import annotations
@@ -23,8 +23,7 @@ class Settings(BaseSettings):
     """Application settings, sourced from environment variables.
 
     See :file:`.env.example` for the exhaustive list. Defaults are tuned
-    for local development; production overrides via Lambda/worker env vars
-    or SSM Parameter Store.
+    for local development; production overrides via Lambda/worker env vars.
     """
 
     model_config = SettingsConfigDict(
@@ -43,16 +42,14 @@ class Settings(BaseSettings):
     # ── AWS ────────────────────────────────────────────────────────────
     aws_region: str = "us-east-1"
 
-    # ── WhatsApp ───────────────────────────────────────────────────────
-    whatsapp_api_version: str = "v21.0"
-    whatsapp_phone_number_id: str = ""  # populated via SSM or env
-    whatsapp_waba_id: str = ""  # informational
-    # Secrets Manager ARNs / names. The actual values are fetched lazily.
-    # SSM Parameter Store names (SecureString). The actual values are
-    # fetched lazily from the parameters under /wactl/whatsapp/*.
-    whatsapp_access_token_secret: str = "wactl/whatsapp/access-token"
-    whatsapp_app_secret_secret: str = "wactl/whatsapp/app-secret"
-    whatsapp_verify_token_secret: str = "wactl/whatsapp/verify-token"
+    # ── Telegram ───────────────────────────────────────────────────────
+    # Bot token issued by @BotFather. Example: "123456:ABCDEF...".
+    # In Lambda / EC2, set this as a plain env var (no Secrets Manager).
+    telegram_bot_token: str = ""
+    # Optional: if set, the webhook verifies the X-Telegram-Bot-Api-Secret-Token
+    # header against this value (constant-time compare).
+    telegram_webhook_secret_token: str = ""
+    telegram_api_base: str = "https://api.telegram.org"
 
     # ── Storage / state ────────────────────────────────────────────────
     s3_media_bucket: str = Field(default_factory=lambda: "")
@@ -62,10 +59,10 @@ class Settings(BaseSettings):
     dedup_ttl_seconds: int = 7 * 24 * 60 * 60  # 7 days
 
     # ── External services ──────────────────────────────────────────────
-    gemini_api_key_secret: str = "wactl/gemini/api-key"
+    # Gemini API key is read by the /pdf-audio worker directly from env.
+    gemini_api_key: str = ""
     gemini_text_model: str = "gemini-2.0-flash"
     gemini_tts_voice: str = "en-US-Journey-D"
-    github_token_secret: str = "wactl/github/token"
 
     # ── HTTP client tuning ────────────────────────────────────────────
     http_timeout_seconds: float = 30.0

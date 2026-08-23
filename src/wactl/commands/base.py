@@ -5,7 +5,7 @@ A command is a single async function that:
 - Returns a :class:`CommandResponse`
 - Is registered via :func:`wactl.commands.registry.register`
 
-Commands MUST NOT touch httpx, boto3, or the WhatsApp Cloud API directly.
+Commands MUST NOT touch httpx, boto3, or the Telegram Bot API directly.
 They orchestrate integrations; that's the entire point of the plugin split.
 """
 
@@ -21,7 +21,7 @@ from wactl.models.command import CommandMeta, CommandResponse
 from wactl.models.user import UserContext
 
 if TYPE_CHECKING:
-    from wactl.integrations.whatsapp.client import WhatsAppClient
+    from wactl.integrations.telegram.client import TelegramClient
 
 logger = structlog.get_logger(__name__)
 
@@ -30,7 +30,7 @@ class CommandContext:
     """Everything a command needs to do its work.
 
     Passed by-value through the worker and Lambda. All integration handles
-    are injected so commands stay testable without real AWS / WhatsApp.
+    are injected so commands stay testable without real AWS / Telegram.
     """
 
     __slots__ = (
@@ -47,8 +47,8 @@ class CommandContext:
         "s3",
         "secrets",
         "sqs",
+        "telegram",
         "user",
-        "whatsapp",
     )
 
     def __init__(
@@ -61,7 +61,7 @@ class CommandContext:
         media_bytes: bytes | None = None,
         media_mime_type: str | None = None,
         media_filename: str | None = None,
-        whatsapp: WhatsAppClient | None = None,
+        telegram: TelegramClient | None = None,
         secrets: Any | None = None,
         s3: Any | None = None,
         sqs: Any | None = None,
@@ -77,7 +77,7 @@ class CommandContext:
         self.media_bytes = media_bytes
         self.media_mime_type = media_mime_type
         self.media_filename = media_filename
-        self.whatsapp = whatsapp
+        self.telegram = telegram
         self.secrets = secrets
         self.s3 = s3
         self.sqs = sqs

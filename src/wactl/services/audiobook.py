@@ -6,8 +6,8 @@ The pipeline:
 3. Synthesize each chunk to WAV via Gemini TTS in parallel.
 4. Concatenate the WAV chunks into a single audio clip.
 
-The function returns the final ``bytes`` (audio) — the caller (the command)
-uploads to S3 and replies to the user via WhatsApp.
+The function returns the final ``bytes`` (audio) — the caller (the worker)
+uploads to S3 and replies to the user via Telegram.
 
 TTS is slow (2-10 s per chunk), so we fan out with :mod:`asyncio.gather`
 to keep wall-clock latency roughly equal to one chunk's runtime.
@@ -77,8 +77,8 @@ def _concat_wavs_to_mp3(wav_blobs: list[bytes]) -> bytes:
     """Concatenate a list of WAV files into a single MP3.
 
     MP3 because WAVs produced by TTS are typically 16-bit PCM mono at the
-    model-default sample rate; MP3 keeps the upload under WhatsApp's
-    16 MB outbound limit for most document lengths.
+    model-default sample rate; MP3 keeps the upload under Telegram's
+    50 MB outbound limit for most document lengths.
     """
     try:
         # Stitch raw PCM frames without re-decoding whenever possible.

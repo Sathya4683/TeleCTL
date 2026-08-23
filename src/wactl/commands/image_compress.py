@@ -9,20 +9,20 @@ Args: optional quality 1..95 (default 75). Optional ``max-width`` and
 
 from __future__ import annotations
 
-from wactl.commands._helpers import media_bucket, output_key, require_whatsapp
+from wactl.commands._helpers import media_bucket, output_key, require_telegram
 from wactl.commands.base import Command, CommandContext
 from wactl.commands.registry import register
 from wactl.exceptions import UserInputError
 from wactl.integrations.aws import s3
 from wactl.integrations.converters import image_compress as img_compress
-from wactl.integrations.whatsapp import messages
+from wactl.integrations.telegram import messages
 from wactl.models.command import CommandResponse
 
 IMAGE_JPEG = "image/jpeg"
 COMPRESS_SUFFIX = ".jpg"
 
 
-@register("/image-compress", sync=True, requires_media=True, description="Compress an image")
+@register("/image-compress", sync=True, requires_media=True, description="Compress an attached image")
 class ImageCompressCommand(Command):
     """Recompress an image and send it back."""
 
@@ -52,10 +52,10 @@ class ImageCompressCommand(Command):
         bucket = media_bucket(ctx)
         key = output_key(ctx, COMPRESS_SUFFIX)
         s3.put_object(bucket, key, out_bytes, content_type=IMAGE_JPEG)
-        whatsapp = require_whatsapp(ctx)
-        message_id = await messages.send_image(
-            whatsapp,
-            to=ctx.user.phone,
+        telegram = require_telegram(ctx)
+        message_id = await messages.send_photo(
+            telegram,
+            chat_id=ctx.user.chat_id,
             link=s3.presigned_get_url(bucket, key),
             caption=f"Compressed (q={quality})",
             reply_to_message_id=ctx.user.message_id,
