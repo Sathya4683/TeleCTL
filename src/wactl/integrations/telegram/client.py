@@ -112,7 +112,13 @@ class TelegramClient:
         """POST a JSON payload, return the parsed envelope."""
         url = self._url(method)
         resp = await self._http().post(url, json=payload)
-        resp.raise_for_status()
+        if resp.status_code >= 400:
+            # Capture the response body for diagnostics — Telegram returns
+            # ``{"ok": false, "description": "..."}`` on errors.
+            raise TelegramApiError(
+                f"Telegram API {method} returned HTTP {resp.status_code}: "
+                f"{resp.text[:500]!r}"
+            )
         data = resp.json()
         envelope = TelegramResponse.model_validate(data)
         if not envelope.ok:

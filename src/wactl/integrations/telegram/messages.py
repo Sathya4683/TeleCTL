@@ -2,17 +2,47 @@
 
 Each helper returns the parsed :class:`TelegramResponse`. Commands that
 need the new ``message_id`` for bookkeeping can read it off the result.
+
+All helpers wrap :func:`_send_with_reply_fallback` which retries without
+``reply_to_message_id`` if Telegram returns 400 for "message to be replied
+not found". This makes the bot robust against any race where the inbound
+message hasn't fully propagated yet.
 """
 
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 from typing import Any
 
 import structlog
 
-from wactl.integrations.telegram.client import TelegramClient
+from wactl.integrations.telegram.client import TelegramApiError, TelegramClient
 
 logger = structlog.get_logger(__name__)
+
+
+async def _send_with_reply_fallback(
+    *,
+    telegram: TelegramClient,
+    kind: str,
+    chat_id: int,
+    primary: Callable[[], Awaitable[Any]],
+    fallback: Callable[[], Awaitable[Any]],
+) -> Any:
+    """Invoke ``primary``; on Telegram 400 about reply-to, retry via ``fallback``."""
+    try:
+        return await primary()
+    except TelegramApiError as exc:
+        msg = str(exc)
+        if "message to be replied not found" not in msg and "reply" not in msg.lower():
+            raise
+        logger.warning(
+            "telegram.reply_not_found",
+            kind=kind,
+            chat_id=chat_id,
+            error=msg[:200],
+        )
+        return await fallback()
 
 
 async def send_text(
@@ -24,11 +54,16 @@ async def send_text(
     parse_mode: str | None = None,
 ) -> str:
     """Send a plain (or Markdown/HTML) text message. Returns the new message_id."""
-    resp = await telegram.send_message(
-        chat_id,
-        text,
-        reply_to_message_id=reply_to_message_id,
-        parse_mode=parse_mode,
+    resp = await _send_with_reply_fallback(
+        telegram=telegram,
+        kind="text",
+        chat_id=chat_id,
+        primary=lambda: telegram.send_message(
+            chat_id, text, reply_to_message_id=reply_to_message_id, parse_mode=parse_mode
+        ),
+        fallback=lambda: telegram.send_message(
+            chat_id, text, reply_to_message_id=None, parse_mode=parse_mode
+        ),
     )
     new_id = _message_id(resp.result)
     logger.info("telegram.sent_text", chat_id=chat_id, message_id=new_id)
@@ -52,13 +87,21 @@ async def send_photo(
     caption: str | None = None,
     reply_to_message_id: int | None = None,
 ) -> str:
-    """Send a photo by URL or file_id. Exactly one of ``link`` / ``file_id`` required."""
+    """Send a photo. ``link`` or ``file_id`` required. Exactly one."""
     photo_arg = _require_media_arg(link=link, file_id=file_id, kind="photo")
-    resp = await telegram.send_photo(
-        chat_id, photo_arg, caption=caption, reply_to_message_id=reply_to_message_id
+    resp = await _send_with_reply_fallback(
+        telegram=telegram,
+        kind="photo",
+        chat_id=chat_id,
+        primary=lambda: telegram.send_photo(
+            chat_id, photo_arg, caption=caption, reply_to_message_id=reply_to_message_id
+        ),
+        fallback=lambda: telegram.send_photo(
+            chat_id, photo_arg, caption=caption, reply_to_message_id=None
+        ),
     )
     new_id = _message_id(resp.result)
-    logger.info("telegram.sent_photo", chat_id=chat_id, message_id=new_id, bytes=len(link or file_id or ""))
+    logger.info("telegram.sent_photo", chat_id=chat_id, message_id=new_id)
     return new_id
 
 
@@ -73,8 +116,16 @@ async def send_document(
 ) -> str:
     """Send a generic file (PDF, DOCX, ZIP, ...) by URL or file_id."""
     doc_arg = _require_media_arg(link=link, file_id=file_id, kind="document")
-    resp = await telegram.send_document(
-        chat_id, doc_arg, caption=caption, reply_to_message_id=reply_to_message_id
+    resp = await _send_with_reply_fallback(
+        telegram=telegram,
+        kind="document",
+        chat_id=chat_id,
+        primary=lambda: telegram.send_document(
+            chat_id, doc_arg, caption=caption, reply_to_message_id=reply_to_message_id
+        ),
+        fallback=lambda: telegram.send_document(
+            chat_id, doc_arg, caption=caption, reply_to_message_id=None
+        ),
     )
     new_id = _message_id(resp.result)
     logger.info("telegram.sent_document", chat_id=chat_id, message_id=new_id)
@@ -93,12 +144,24 @@ async def send_audio(
 ) -> str:
     """Send an audio file (MP3, M4A) by URL or file_id."""
     audio_arg = _require_media_arg(link=link, file_id=file_id, kind="audio")
-    resp = await telegram.send_audio(
-        chat_id,
-        audio_arg,
-        caption=caption,
-        title=title,
-        reply_to_message_id=reply_to_message_id,
+    resp = await _send_with_reply_fallback(
+        telegram=telegram,
+        kind="audio",
+        chat_id=chat_id,
+        primary=lambda: telegram.send_audio(
+            chat_id,
+            audio_arg,
+            caption=caption,
+            title=title,
+            reply_to_message_id=reply_to_message_id,
+        ),
+        fallback=lambda: telegram.send_audio(
+            chat_id,
+            audio_arg,
+            caption=caption,
+            title=title,
+            reply_to_message_id=None,
+        ),
     )
     new_id = _message_id(resp.result)
     logger.info("telegram.sent_audio", chat_id=chat_id, message_id=new_id)
@@ -116,8 +179,16 @@ async def send_voice(
 ) -> str:
     """Send a voice note (OGG/Opus) by URL or file_id."""
     voice_arg = _require_media_arg(link=link, file_id=file_id, kind="voice")
-    resp = await telegram.send_voice(
-        chat_id, voice_arg, caption=caption, reply_to_message_id=reply_to_message_id
+    resp = await _send_with_reply_fallback(
+        telegram=telegram,
+        kind="voice",
+        chat_id=chat_id,
+        primary=lambda: telegram.send_voice(
+            chat_id, voice_arg, caption=caption, reply_to_message_id=reply_to_message_id
+        ),
+        fallback=lambda: telegram.send_voice(
+            chat_id, voice_arg, caption=caption, reply_to_message_id=None
+        ),
     )
     new_id = _message_id(resp.result)
     logger.info("telegram.sent_voice", chat_id=chat_id, message_id=new_id)
