@@ -81,7 +81,7 @@ def _parse_args(args: str) -> tuple[int | None, int | None, img_resize.FitMode]:
             fit = mode
             break
 
-    if "x" in size_str:
+    if "x" in size_str.lower():
         w_s, h_s = size_str.lower().split("x", 1)
         w = int(w_s) if w_s.strip() else None
         h = int(h_s) if h_s.strip() else None
