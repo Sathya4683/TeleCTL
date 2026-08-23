@@ -24,6 +24,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy source + dependency spec.
+# (README.md is intentionally excluded — ``uv export --no-emit-project``
+# below never tries to install the local wactl package, so the README
+# is unnecessary at build time. We copy wactl in manually after.)
 COPY pyproject.toml uv.lock ./
 COPY src ./src
 COPY worker ./worker
@@ -31,8 +34,13 @@ COPY worker ./worker
 # Install uv (modern pip replacement) and use it to build a self-contained
 # package set: every dependency is installed under /out/packages, suitable
 # for bundling into a release tarball.
+#
+# ``--no-emit-project`` excludes the local ``wactl`` package from the
+# requirements file — we copy it in manually below instead of letting uv
+# try to build it from this directory (avoids needing README.md at build
+# time and keeps the layer cache friendly).
 RUN pip install --no-cache-dir uv && \
-    uv export --frozen --no-hashes --format requirements-txt > /tmp/requirements.txt && \
+    uv export --frozen --no-hashes --no-emit-project --format requirements-txt > /tmp/requirements.txt && \
     uv pip install --python /usr/local/bin/python --target /out/packages \
         --no-cache --no-compile-bytecode -r /tmp/requirements.txt
 
