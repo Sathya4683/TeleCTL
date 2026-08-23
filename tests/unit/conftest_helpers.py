@@ -21,11 +21,10 @@ from wactl.models.user import UserContext
 def make_user() -> UserContext:
     """Construct a deterministic :class:`UserContext`."""
     return UserContext(
-        phone="15551234567",
-        name="alice",
-        message_id="wamid.TEST",
-        waba_id="waba-1",
-        phone_number_id="pn-1",
+        chat_id=111111111,
+        username="alice",
+        first_name="Alice",
+        message_id=42,
     )
 
 
@@ -36,11 +35,11 @@ def make_context(
     media_bytes: bytes | None = None,
     media_mime_type: str | None = None,
     media_filename: str | None = None,
-    whatsapp: Any = None,
+    telegram: Any = None,
     s3: Any = None,
     s3_bucket: str = "wactl-media-test",
     http: Any = None,
-    gemini: Any = None,
+    gemini: Any | None = None,
     extra: dict[str, Any] | None = None,
 ) -> CommandContext:
     """Build a :class:`CommandContext` with sensible test defaults."""
@@ -48,11 +47,11 @@ def make_context(
         user=user or make_user(),
         args=args,
         raw_body="",
-        media_id="mid.test" if media_bytes is not None else None,
+        media_id="AgAC-test-file-id" if media_bytes is not None else None,
         media_bytes=media_bytes,
         media_mime_type=media_mime_type,
         media_filename=media_filename,
-        whatsapp=whatsapp,
+        telegram=telegram,
         s3=s3,
         http=http,
         gemini=gemini,
@@ -62,27 +61,42 @@ def make_context(
 
 
 @pytest.fixture
-def fake_whatsapp() -> MagicMock:
-    """A :class:`MagicMock` standing in for a :class:`WhatsAppClient`.
+def fake_telegram() -> MagicMock:
+    """A :class:`MagicMock` standing in for a :class:`TelegramClient`.
 
-    All HTTP-bound methods are :class:`AsyncMock` returning a wamid or
-    the right empty shape so it can be awaited anywhere commands call it.
+    All HTTP-bound methods are :class:`AsyncMock` returning a numeric
+    message_id so they can be awaited anywhere commands call them.
     """
-    client = MagicMock(name="whatsapp")
-    client.messages_url = "https://graph.facebook.com/v21.0/pn-1/messages"
-    # Sub-methods on the wrapper — also async.
-    client.post_json = AsyncMock(
-        return_value={"messages": [{"id": "wamid.OUT"}]},
+    client = MagicMock(name="telegram")
+    client.bot_token = "test-token"
+    client.api_base = "https://api.telegram.org"
+
+    # Direct methods — also async.
+    client.send_message = AsyncMock(
+        return_value=MagicMock(result=MagicMock(message_id=999)),
     )
-    client.get_json = AsyncMock(
-        return_value={"url": "https://look.example/b", "messages": [{"id": "wamid.OUT"}]},
+    client.send_photo = AsyncMock(
+        return_value=MagicMock(result=MagicMock(message_id=999)),
     )
-    client.get_bytes = AsyncMock(return_value=b"binary-blob")
-    # High-level send_* — convenience, also async.
-    client.send_text = AsyncMock(return_value="wamid.OUT")
-    client.send_document = AsyncMock(return_value="wamid.OUT")
-    client.send_image = AsyncMock(return_value="wamid.OUT")
-    client.send_audio = AsyncMock(return_value="wamid.OUT")
+    client.send_document = AsyncMock(
+        return_value=MagicMock(result=MagicMock(message_id=999)),
+    )
+    client.send_audio = AsyncMock(
+        return_value=MagicMock(result=MagicMock(message_id=999)),
+    )
+    client.send_voice = AsyncMock(
+        return_value=MagicMock(result=MagicMock(message_id=999)),
+    )
+    client.send_chat_action = AsyncMock(
+        return_value=MagicMock(result=True),
+    )
+    client.get_file = AsyncMock(
+        return_value=MagicMock(result=MagicMock(file_path="photos/file_0.jpg")),
+    )
+    client.download_file = AsyncMock(return_value=b"binary-blob")
+
+    # High-level convenience used by commands/messages.py.
+    client.aclose = AsyncMock()
     return client
 
 

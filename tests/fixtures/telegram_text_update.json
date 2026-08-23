@@ -1,0 +1,10 @@
+{
+  "update_id": 100001,
+  "message": {
+    "message_id": 101,
+    "from": {"id": 1001, "is_bot": false, "first_name": "Alice", "username": "alice"},
+    "chat": {"id": 1001, "type": "private", "first_name": "Alice", "username": "alice"},
+    "date": 1700000000,
+    "text": "/image-resize 800x600"
+  }
+}

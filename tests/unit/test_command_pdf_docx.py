@@ -14,7 +14,7 @@ def _make_pdf_bytes() -> bytes:
 
 
 @pytest.mark.asyncio
-async def test_pdf_docx_runs_pipeline(monkeypatch: pytest.MonkeyPatch, fake_whatsapp) -> None:
+async def test_pdf_docx_runs_pipeline(monkeypatch: pytest.MonkeyPatch, fake_telegram) -> None:
     """End-to-end: convert (mocked) → upload (mocked) → reply (mocked)."""
     called: dict[str, object] = {}
 
@@ -29,10 +29,10 @@ async def test_pdf_docx_runs_pipeline(monkeypatch: pytest.MonkeyPatch, fake_what
 
     async def _capturing_send(*_args, **kwargs):
         called["send_kwargs"] = kwargs
-        return "wamid.OUT"
+        return "999"
 
     monkeypatch.setattr(
-        "wactl.integrations.whatsapp.messages.send_document",
+        "wactl.integrations.telegram.messages.send_document",
         _capturing_send,
     )
 
@@ -45,17 +45,27 @@ async def test_pdf_docx_runs_pipeline(monkeypatch: pytest.MonkeyPatch, fake_what
         lambda *a, **kw: "https://signed.example/abc",
     )
 
-    ctx = make_context(media_bytes=_make_pdf_bytes(), whatsapp=fake_whatsapp)
+    ctx = make_context(media_bytes=_make_pdf_bytes(), telegram=fake_telegram)
     resp = await pdf_docx.PdfDocxCommand().run(ctx)
 
     assert resp.success
-    assert resp.message_id == "wamid.OUT"
+    assert resp.message_id == "999"
     assert called["convert_input"] == _make_pdf_bytes()
     assert called["send_kwargs"]["link"] == "https://signed.example/abc"
+    assert called["send_kwargs"]["chat_id"] == 111111111
 
 
 @pytest.mark.asyncio
-async def test_pdf_docx_requires_media(fake_whatsapp) -> None:
-    ctx = make_context(media_bytes=None, whatsapp=fake_whatsapp)
+async def test_pdf_docx_requires_media(fake_telegram) -> None:
+    ctx = make_context(media_bytes=None, telegram=fake_telegram)
     with pytest.raises(UserInputError):
         await pdf_docx.PdfDocxCommand().run(ctx)
+
+
+def test_pdf_docx_is_registered_as_sync() -> None:
+    """/pdf-docx is sync — runs inline in Lambda within the 15-min timeout."""
+    from wactl.commands.registry import get
+
+    cls = get("/pdf-docx")
+    assert cls is not None
+    assert cls.meta.sync is True

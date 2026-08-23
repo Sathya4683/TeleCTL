@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from unittest.mock import AsyncMock, MagicMock
+
 import pytest
 
 from wactl.commands.registry import clear as clear_registry
@@ -19,11 +21,10 @@ def _reset_registry() -> None:
 
 def _user() -> UserContext:
     return UserContext(
-        phone="15551234567",
-        name="alice",
-        message_id="wamid.test",
-        waba_id="waba-1",
-        phone_number_id="pn-1",
+        chat_id=111111111,
+        username="alice",
+        first_name="Alice",
+        message_id=42,
     )
 
 
@@ -46,7 +47,7 @@ async def test_prepare_context_no_media_required() -> None:
     from wactl.dispatcher import prepare_context
 
     routed = _routed_sync()
-    ctx = await prepare_context(routed, user=_user(), whatsapp=None)
+    ctx = await prepare_context(routed, user=_user(), telegram=None)
     assert ctx.media_bytes is None
     assert ctx.media_id is None
 
@@ -67,11 +68,11 @@ async def test_prepare_context_requires_media_but_none_provided() -> None:
 
     routed = route("/needs-media")
     with pytest.raises(UserInputError):
-        await prepare_context(routed, user=_user(), whatsapp=None)
+        await prepare_context(routed, user=_user(), telegram=None)
 
 
 @pytest.mark.asyncio
-async def test_prepare_context_requires_media_but_no_whatsapp() -> None:
+async def test_prepare_context_requires_media_but_no_telegram() -> None:
     from wactl.dispatcher import prepare_context
 
     @register("/needs-media-2", sync=True, requires_media=True)
@@ -86,20 +87,16 @@ async def test_prepare_context_requires_media_but_no_whatsapp() -> None:
         await prepare_context(
             routed,
             user=_user(),
-            whatsapp=None,
+            telegram=None,
             media_id="mid-1",
         )
 
 
 @pytest.mark.asyncio
 async def test_prepare_context_downloads_media_when_provided() -> None:
-    """When media_id is given AND a whatsapp client is supplied,
-    the dispatcher should pull the bytes via the client."""
-    import httpx
-    import respx
-
+    """When media_id is given AND a Telegram client is supplied,
+    the dispatcher should pull the bytes via the Telegram two-step flow."""
     from wactl.dispatcher import prepare_context
-    from wactl.integrations.whatsapp.client import WhatsAppClient
 
     @register("/dl", sync=True, requires_media=True)
     class _Cmd:
@@ -108,28 +105,24 @@ async def test_prepare_context_downloads_media_when_provided() -> None:
 
     from wactl.router import route
 
-    wa = WhatsAppClient(
-        api_version="v21.0",
-        phone_number_id="pn-1",
-        access_token="t",
-        max_retries=2,
+    tg = MagicMock()
+    tg.get_file = AsyncMock(
+        return_value=MagicMock(result=MagicMock(file_path="photos/file_0.jpg"))
     )
+    tg.download_file = AsyncMock(return_value=b"BIN")
 
     routed = route("/dl")
-
-    with respx.mock(assert_all_called=False) as mock:
-        mock.get("/v21.0/mid-1").mock(return_value=httpx.Response(200, json={"url": "https://look/b"}))
-        mock.get("https://look/b").mock(return_value=httpx.Response(200, content=b"BIN"))
-
-        ctx = await prepare_context(
-            routed,
-            user=_user(),
-            whatsapp=wa,
-            media_id="mid-1",
-        )
+    ctx = await prepare_context(
+        routed,
+        user=_user(),
+        telegram=tg,
+        media_id="mid-1",
+    )
 
     assert ctx.media_bytes == b"BIN"
     assert ctx.media_id == "mid-1"
+    tg.get_file.assert_awaited_once_with("mid-1")
+    tg.download_file.assert_awaited_once_with("photos/file_0.jpg")
 
 
 # ─── dispatch_sync ─────────────────────────────────────────────────────
@@ -152,7 +145,7 @@ async def test_dispatch_sync_runs_command() -> None:
     from wactl.router import route
 
     routed = route("/captured arg-value")
-    resp = await dispatch_sync(routed, user=_user(), whatsapp=None, raw_body="hi")
+    resp = await dispatch_sync(routed, user=_user(), telegram=None, raw_body="hi")
     assert resp.success
     assert captured["args"] == "arg-value"
     assert captured["user"] == _user()
@@ -176,8 +169,14 @@ async def test_dispatch_async_enqueues_to_sqs() -> None:
         def __init__(self) -> None:
             self.sent: list[dict[str, object]] = []
 
-        async def send_message(self, queue_url: str, body: dict[str, object]) -> str:
-            self.sent.append(body)
+        async def send_message(
+            self,
+            queue_url: str,
+            body: dict[str, object],
+            *,
+            message_group_id: str | None = None,
+        ) -> str:
+            self.sent.append({"body": body, "group": message_group_id})
             return "mid-1"
 
     sqs = _FakeSQS()
@@ -189,7 +188,9 @@ async def test_dispatch_async_enqueues_to_sqs() -> None:
         queue_url="https://q",
         media_id="m1",
         media_mime="application/pdf",
+        message_group_id="111111111",
     )
     assert mid == "mid-1"
     assert len(sqs.sent) == 1
-    assert '"command":"/async-cmd"' in str(sqs.sent[0])
+    assert sqs.sent[0]["group"] == "111111111"
+    assert '"command":"/async-cmd"' in str(sqs.sent[0]["body"])
