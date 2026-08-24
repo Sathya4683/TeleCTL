@@ -15,8 +15,8 @@ resource "aws_lambda_function" "webhook" {
   role          = aws_iam_role.lambda_exec.arn
   package_type  = "Image"
   image_uri     = "${aws_ecr_repository.webhook.repository_url}:${var.lambda_image_tag}"
-  timeout       = 300
-  memory_size   = 512
+  timeout       = 60
+  memory_size   = 1024
   architectures = ["x86_64"]
 
   environment {
