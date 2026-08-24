@@ -15,7 +15,7 @@ def _make_pdf_bytes() -> bytes:
 
 @pytest.mark.asyncio
 async def test_pdf_docx_runs_pipeline(monkeypatch: pytest.MonkeyPatch, fake_telegram) -> None:
-    """End-to-end: convert (mocked) → upload (mocked) → reply (mocked)."""
+    """End-to-end: convert (mocked) → upload via multipart (mocked) → reply (mocked)."""
     called: dict[str, object] = {}
 
     def fake_pdf_to_docx(data: bytes) -> bytes:
@@ -27,22 +27,13 @@ async def test_pdf_docx_runs_pipeline(monkeypatch: pytest.MonkeyPatch, fake_tele
         fake_pdf_to_docx,
     )
 
-    async def _capturing_send(*_args, **kwargs):
-        called["send_kwargs"] = kwargs
+    async def _capturing_upload(*_args, **kwargs):
+        called["upload_kwargs"] = kwargs
         return "999"
 
     monkeypatch.setattr(
-        "wactl.integrations.telegram.messages.send_document",
-        _capturing_send,
-    )
-
-    def fake_put(bucket, key, body, *, content_type=None, metadata=None):
-        called["put"] = (bucket, key, body, content_type)
-
-    monkeypatch.setattr("wactl.commands.pdf_docx.s3.put_object", fake_put)
-    monkeypatch.setattr(
-        "wactl.commands.pdf_docx.s3.presigned_get_url",
-        lambda *a, **kw: "https://signed.example/abc",
+        "wactl.integrations.telegram.messages.upload_document",
+        _capturing_upload,
     )
 
     ctx = make_context(media_bytes=_make_pdf_bytes(), telegram=fake_telegram)
@@ -51,8 +42,9 @@ async def test_pdf_docx_runs_pipeline(monkeypatch: pytest.MonkeyPatch, fake_tele
     assert resp.success
     assert resp.message_id == "999"
     assert called["convert_input"] == _make_pdf_bytes()
-    assert called["send_kwargs"]["link"] == "https://signed.example/abc"
-    assert called["send_kwargs"]["chat_id"] == 111111111
+    assert called["upload_kwargs"]["file_bytes"] == b"docx-bytes"
+    assert called["upload_kwargs"]["chat_id"] == 111111111
+    assert called["upload_kwargs"]["caption"] == "Here's your DOCX."
 
 
 @pytest.mark.asyncio

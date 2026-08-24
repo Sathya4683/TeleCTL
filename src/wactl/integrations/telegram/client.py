@@ -246,6 +246,49 @@ class TelegramClient:
             payload["reply_to_message_id"] = reply_to_message_id
         return await self._post("sendAudio", payload)
 
+    async def upload_and_send_document(
+        self,
+        chat_id: int,
+        file_bytes: bytes,
+        filename: str,
+        *,
+        caption: str | None = None,
+        reply_to_message_id: int | None = None,
+    ) -> TelegramResponse:
+        """Upload ``file_bytes`` directly to Telegram via multipart/form-data.
+
+        Use this for files large enough that Telegram's URL fetch
+        (``sendDocument`` with an HTTP URL) is unreliable — boto3's
+        presigned URLs are signed for GET only, so the CDN's HEAD
+        pre-check fails with 403 and the bot gets
+        ``Bad Request: failed to get HTTP URL content``.
+
+        Multipart upload is the recommended path for any file > 5 MB and
+        avoids the S3 presigned-URL lifecycle entirely.
+        """
+        url = self._url("sendDocument")
+        form: dict[str, Any] = {"chat_id": str(chat_id)}
+        if caption:
+            form["caption"] = caption
+        if reply_to_message_id is not None:
+            form["reply_to_message_id"] = str(reply_to_message_id)
+        files = {"document": (filename, file_bytes, "application/octet-stream")}
+        async with self._new_http() as client:
+            resp = await client.post(url, data=form, files=files)
+        if resp.status_code >= 400:
+            raise TelegramApiError(
+                f"Telegram API upload_and_send_document returned HTTP {resp.status_code}: "
+                f"{resp.text[:500]!r}"
+            )
+        data = resp.json()
+        envelope = TelegramResponse.model_validate(data)
+        if not envelope.ok:
+            raise TelegramApiError(
+                f"Telegram API upload_and_send_document returned ok=false: "
+                f"{envelope.description!r} (error_code={envelope.error_code})"
+            )
+        return envelope
+
     async def send_voice(
         self,
         chat_id: int,

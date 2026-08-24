@@ -132,6 +132,42 @@ async def send_document(
     return new_id
 
 
+async def upload_document(
+    telegram: TelegramClient,
+    *,
+    chat_id: int,
+    file_bytes: bytes,
+    filename: str = "document",
+    caption: str | None = None,
+    reply_to_message_id: int | None = None,
+) -> str:
+    """Upload ``file_bytes`` to Telegram via multipart and return the new message_id.
+
+    Use this for files that are too big / don't reliably fetch via URL
+    (e.g. DOCX > a few MB). The bot already has the bytes in memory
+    from the conversion step, so we don't need to round-trip through S3.
+    """
+    try:
+        resp = await telegram.upload_and_send_document(
+            chat_id,
+            file_bytes,
+            filename,
+            caption=caption,
+            reply_to_message_id=reply_to_message_id,
+        )
+    except TelegramApiError as exc:
+        msg = str(exc)
+        if "message to be replied not found" not in msg and "reply" not in msg.lower():
+            raise
+        logger.warning("telegram.reply_not_found", kind="document_upload", chat_id=chat_id, error=msg[:200])
+        resp = await telegram.upload_and_send_document(
+            chat_id, file_bytes, filename, caption=caption, reply_to_message_id=None
+        )
+    new_id = _message_id(resp.result)
+    logger.info("telegram.uploaded_document", chat_id=chat_id, message_id=new_id, bytes=len(file_bytes))
+    return new_id
+
+
 async def send_audio(
     telegram: TelegramClient,
     *,
