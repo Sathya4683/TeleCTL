@@ -17,6 +17,7 @@ the correct name.
 from __future__ import annotations
 
 from wactl.commands import (  # noqa: F401 — side-effect: registers commands
+    docx_pdf,
     help,
     image_compress,
     image_resize,
