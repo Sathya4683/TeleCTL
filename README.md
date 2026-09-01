@@ -6,7 +6,7 @@ A Telegram bot that turns slash commands into file conversions and audiobooks, b
 
 ## The idea
 
-WACTL turns Telegram into a file-conversion surface. Send a slash command, attach a file if the command needs one, and the bot replies in the same chat. `/pdf-docx` with a PDF attached gets you back a Word document. `/pdf-audio` with a PDF gets you back an MP3 audiobook. No separate app to install, no new account, no tab switching. If the file or link is already in Telegram, the fix stays in Telegram too.
+TeleCTL turns Telegram into a file-conversion surface. Send a slash command, attach a file if the command needs one, and the bot replies in the same chat. `/pdf-docx` with a PDF attached gets you back a Word document. `/pdf-audio` with a PDF gets you back an MP3 audiobook. No separate app to install, no new account, no tab switching. If the file or link is already in Telegram, the fix stays in Telegram too.
 
 Underneath, it's a small production-shaped AWS backend: a webhook Lambda for anything that finishes in a couple of seconds, and a single EC2 worker for the slow stuff.
 
@@ -26,7 +26,7 @@ Five additional commands (`/merge-pdf`, `/split-pdf`, `/translate`, `/web-summar
 
 ## Architecture
 
-WACTL runs across two compute surfaces (a webhook Lambda and a long-running EC2 worker), two storage surfaces (S3 for media, DynamoDB for webhook dedup) and one FIFO queue (SQS) in between. Fast commands are handled inline by the Lambda; the slow one (`/pdf-audio`) is enqueued and drained by the worker. The Telegram Bot API is the entry and exit point for every message.
+TeleCTL runs across two compute surfaces (a webhook Lambda and a long-running EC2 worker), two storage surfaces (S3 for media, DynamoDB for webhook dedup) and one FIFO queue (SQS) in between. Fast commands are handled inline by the Lambda; the slow one (`/pdf-audio`) is enqueued and drained by the worker. The Telegram Bot API is the entry and exit point for every message.
 
 ![WACTL Architecture Diagram](docs/architectureV3.png)
 
@@ -53,7 +53,7 @@ About 180 tests run in well under 5 seconds, with no live AWS calls or network r
 ## Project structure
 
 ```
-wactl/
+TeleCTL/
 ├── src/wactl/          # the core package (config, logging, webhook, router, dispatcher)
 │   ├── commands/        # one file per slash command, registered via a decorator
 │   ├── models/          # pydantic value objects
