@@ -1,4 +1,4 @@
-# WACTL
+# TeleCTL
 
 **Telegram Control**
 
