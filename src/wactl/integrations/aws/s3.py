@@ -6,6 +6,7 @@ patterns; the worker uses it for the same, plus reading cached inputs.
 
 from __future__ import annotations
 
+import os
 from typing import Any, cast
 
 import boto3
@@ -17,9 +18,20 @@ _client: Any = None
 
 
 def _get_client() -> Any:
+    """Return a process-singleton S3 client bound to the regional endpoint.
+
+    boto3 defaults to the **global** ``s3.amazonaws.com`` endpoint, which
+    makes S3 reply with a 307 Temporary Redirect to the regional
+    endpoint for any bucket outside ``us-east-1``. Telegram's CDN
+    fetcher does **not** follow 307s, so the resulting presigned URL
+    fails with ``Bad Request: failed to get HTTP URL content``.
+    Pinning the client to the regional endpoint keeps presigned URLs
+    single-hop.
+    """
     global _client  # noqa: PLW0603 — intentional module-level singleton
     if _client is None:
-        _client = boto3.client("s3")
+        region = os.environ.get("AWS_REGION") or boto3.session.Session().region_name or "us-east-1"
+        _client = boto3.client("s3", region_name=region, endpoint_url=f"https://s3.{region}.amazonaws.com")
     return _client
 
 

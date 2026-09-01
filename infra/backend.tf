@@ -1,13 +1,10 @@
-# S3 backend with native lockfile (Terraform 1.10+).
-# Bucket must be created out-of-band before the first `terraform init`.
-# Pass values via -backend-config at init time, e.g.:
-#   terraform init \
-#     -backend-config="bucket=wactl-tf-state-${AWS_ACCOUNT_ID}" \
-#     -backend-config="region=us-east-1"
+# Local backend — state lives in `infra/terraform.tfstate`.
+# Pros: zero AWS setup before first `terraform init`; no extra S3 bill.
+# Cons: state is on this machine; lose it and you re-apply from scratch.
+# Switch back to S3 by adding a `backend "s3" { ... }` block if you
+# ever collaborate.
 terraform {
-  backend "s3" {
-    key            = "wactl/terraform.tfstate"
-    use_lockfile   = true
-    encrypt        = true
+  backend "local" {
+    path = "terraform.tfstate"
   }
 }

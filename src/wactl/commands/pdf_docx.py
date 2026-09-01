@@ -1,34 +1,34 @@
 """``/pdf-docx`` — convert an inbound PDF attachment to a DOCX file.
 
-Runs asynchronously (enqueued to SQS) because ``pdf2docx`` can take
-5-30 seconds on multi-page documents. The worker downloads the PDF
-from Meta, converts it, uploads the DOCX to S3, and sends the
-resulting document back to the user via WhatsApp.
+Runs **synchronously** in Lambda: ``pdf2docx`` typically takes 5-30
+seconds on multi-page documents, which fits comfortably inside the
+15-minute Lambda timeout.
+
+The DOCX is delivered via **multipart upload** (``sendDocument`` with
+the bytes in the request body) instead of an HTTP URL. That avoids
+Telegram's CDN URL-fetch path, which performs a HEAD pre-check that
+fails on boto3's GET-signed presigned URLs (HEAD returns 403; the
+resulting bot error was ``Bad Request: failed to get HTTP URL content``).
+Multipart upload is the recommended path for any file > 5 MB.
 """
 
 from __future__ import annotations
 
-from wactl.commands._helpers import (
-    media_bucket,
-    output_key,
-    require_whatsapp,
-    suggest_filename,
-)
+from wactl.commands._helpers import require_telegram
 from wactl.commands.base import Command, CommandContext
 from wactl.commands.registry import register
 from wactl.exceptions import UserInputError
-from wactl.integrations.aws import s3
 from wactl.integrations.converters import pdf_docx
-from wactl.integrations.whatsapp import messages
+from wactl.integrations.telegram import messages
 from wactl.models.command import CommandResponse
 
 DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 DOCX_SUFFIX = ".docx"
 
 
-@register("/pdf-docx", sync=False, requires_media=True, description="Convert PDF to DOCX")
+@register("/pdf-docx", sync=True, requires_media=True, description="Convert attached PDF to DOCX")
 class PdfDocxCommand(Command):
-    """Download → convert → upload → reply with the DOCX."""
+    """Download → convert → upload via multipart → reply with the DOCX."""
 
     async def run(self, ctx: CommandContext) -> CommandResponse:
         if ctx.media_bytes is None:
@@ -37,22 +37,25 @@ class PdfDocxCommand(Command):
                 user_message="Please attach a PDF when using /pdf-docx.",
             )
         docx_bytes = pdf_docx.pdf_to_docx(ctx.media_bytes)
-        bucket = media_bucket(ctx)
-        key = output_key(ctx, DOCX_SUFFIX)
-        s3.put_object(bucket, key, docx_bytes, content_type=DOCX_MIME)
-        whatsapp = require_whatsapp(ctx)
-        message_id = await messages.send_document(
-            whatsapp,
-            to=ctx.user.phone,
-            link=s3.presigned_get_url(bucket, key),
-            filename=suggest_filename(ctx, DOCX_SUFFIX, default="output.docx"),
+        # Build a friendly filename for the user (preserve original PDF name if known).
+        filename = "output.docx"
+        if ctx.media_filename:
+            base = ctx.media_filename.rsplit(".", 1)[0]
+            if base:
+                filename = f"{base}.docx"
+        telegram = require_telegram(ctx)
+        message_id = await messages.upload_document(
+            telegram,
+            chat_id=ctx.user.chat_id,
+            file_bytes=docx_bytes,
+            filename=filename,
             caption="Here's your DOCX.",
             reply_to_message_id=ctx.user.message_id,
         )
         return CommandResponse(
             success=True,
             message_id=message_id,
-            notes={"bucket": bucket, "key": key, "bytes": len(docx_bytes)},
+            notes={"bytes": len(docx_bytes)},
         )
 
 

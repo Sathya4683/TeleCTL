@@ -1,10 +1,9 @@
 # ─── Lambda execution role ────────────────────────────────────────────
 # Least-privilege permissions for the webhook Lambda:
 # • CloudWatch Logs write
-# • Secrets read (app secret for HMAC verify)
 # • S3 RW to media bucket (downloading inbound + uploading outbound media)
 # • DynamoDB RW to dedup table (try_claim / conditional put)
-# • SQS send (for async dispatch)
+# • SQS send (for /pdf-audio async dispatch — FIFO queue)
 data "aws_iam_policy_document" "lambda_assume" {
   statement {
     actions = ["sts:AssumeRole"]
@@ -25,24 +24,27 @@ data "aws_iam_policy_document" "lambda_policy" {
     sid    = "Logs"
     effect = "Allow"
     actions = [
-      "logs:CreateLogGroup",
       "logs:CreateLogStream",
       "logs:PutLogEvents",
     ]
-    resources = ["arn:aws:logs:*:*:*"]
+    resources = [
+      "arn:aws:logs:${var.region}:${local.account_id}:log-group:/aws/lambda/${local.suffix}-webhook",
+      "arn:aws:logs:${var.region}:${local.account_id}:log-group:/aws/lambda/${local.suffix}-webhook:*",
+    ]
   }
 
   statement {
-    sid    = "SecretsRead"
-    effect = "Allow"
-    actions = [
-      "ssm:GetParameter",
-    ]
-    resources = [
-      local.whatsapp_app_secret_arn,
-      local.whatsapp_access_token_secret_arn,
-      local.whatsapp_verify_token_arn,
-    ]
+    sid       = "EcrPull"
+    effect    = "Allow"
+    actions   = ["ecr:GetDownloadUrlForLayer", "ecr:BatchGetImage", "ecr:BatchCheckLayerAvailability"]
+    resources = ["arn:aws:ecr:${var.region}:${local.account_id}:repository/${local.suffix}-webhook"]
+  }
+
+  statement {
+    sid       = "EcrAuth"
+    effect    = "Allow"
+    actions   = ["ecr:GetAuthorizationToken"]
+    resources = ["*"]
   }
 
   statement {
@@ -74,8 +76,10 @@ resource "aws_iam_role_policy" "lambda_policy" {
 }
 
 # ─── EC2 worker IAM ───────────────────────────────────────────────────
-# Same trust set as before but bounded to ec2.amazonaws.com + we attach
-# the AWS SSM Session Manager policy for ops access (optional).
+# The worker is the only consumer of the FIFO jobs queue, the media
+# bucket (read+write), and the releases bucket (read worker.tar.gz on
+# first boot via cloud-init). Session Manager access is handled by the
+# AWS-managed AmazonSSMManagedInstanceCore policy attached below.
 data "aws_iam_policy_document" "worker_assume" {
   statement {
     actions = ["sts:AssumeRole"]
@@ -96,11 +100,13 @@ data "aws_iam_policy_document" "worker_policy" {
     sid    = "Logs"
     effect = "Allow"
     actions = [
-      "logs:CreateLogGroup",
       "logs:CreateLogStream",
       "logs:PutLogEvents",
     ]
-    resources = ["arn:aws:logs:*:*:*"]
+    resources = [
+      "arn:aws:logs:${var.region}:${local.account_id}:log-group:/wactl/${local.suffix}/worker",
+      "arn:aws:logs:${var.region}:${local.account_id}:log-group:/wactl/${local.suffix}/worker:*",
+    ]
   }
 
   statement {
@@ -118,15 +124,10 @@ data "aws_iam_policy_document" "worker_policy" {
   }
 
   statement {
-    sid    = "SecretsRead"
-    effect = "Allow"
-    actions = [
-      "ssm:GetParameter",
-    ]
-    resources = [
-      local.whatsapp_access_token_secret_arn,
-      local.whatsapp_app_secret_arn,
-    ]
+    sid       = "ReleasesBucket"
+    effect    = "Allow"
+    actions   = ["s3:GetObject"]
+    resources = ["arn:aws:s3:::${aws_s3_bucket.releases.bucket}/*"]
   }
 }
 
@@ -136,93 +137,13 @@ resource "aws_iam_role_policy" "worker_policy" {
   policy = data.aws_iam_policy_document.worker_policy.json
 }
 
+# Session Manager (SSM) so you can shell into the worker without SSH.
+resource "aws_iam_role_policy_attachment" "worker_ssm" {
+  role       = aws_iam_role.worker.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
+}
+
 resource "aws_iam_instance_profile" "worker" {
   name = "${local.suffix}-worker"
   role = aws_iam_role.worker.name
-}
-
-# ─── GitHub Actions OIDC role ────────────────────────────────────────
-# Trust policy restricts the role to a single repo + branch via the OIDC
-# `sub` claim. Update `github_org` / `github_repo` below (or use a
-# variable) before first apply.
-data "aws_iam_policy_document" "gha_assume" {
-  statement {
-    actions = ["sts:AssumeRoleWithWebIdentity"]
-    principals {
-      type        = "Federated"
-      identifiers = [aws_iam_openid_connect_provider.github.arn]
-    }
-    condition {
-      test     = "StringEquals"
-      variable = "token.actions.githubusercontent.com:aud"
-      values   = ["sts.amazonaws.com"]
-    }
-    condition {
-      test     = "StringLike"
-      variable = "token.actions.githubusercontent.com:sub"
-      values   = ["repo:sathya-narayanan/wactl:ref:refs/heads/main"]
-    }
-  }
-}
-
-resource "aws_iam_openid_connect_provider" "github" {
-  url             = "https://token.actions.githubusercontent.com"
-  client_id_list  = ["sts.amazonaws.com"]
-  thumbprint_list = ["6938fd4d98bab03faadb97b34396831e3780a973"]
-}
-
-resource "aws_iam_role" "github_actions" {
-  name               = "${local.suffix}-gha-deploy"
-  assume_role_policy = data.aws_iam_policy_document.gha_assume.json
-}
-
-data "aws_iam_policy_document" "gha_policy" {
-  statement {
-    sid       = "StateBucket"
-    effect    = "Allow"
-    actions   = ["s3:GetObject", "s3:PutObject", "s3:ListBucket"]
-    resources = [
-      "arn:aws:s3:::wactl-tf-state-${local.account_id}",
-      "arn:aws:s3:::wactl-tf-state-${local.account_id}/*",
-    ]
-  }
-
-  statement {
-    sid    = "ReleaseBucket"
-    effect = "Allow"
-    actions = [
-      "s3:PutObject",
-      "s3:GetObject",
-      "s3:ListBucket",
-    ]
-    resources = [
-      aws_s3_bucket.releases.arn,
-      "${aws_s3_bucket.releases.arn}/*",
-    ]
-  }
-
-  statement {
-    sid    = "LambdaOps"
-    effect = "Allow"
-    actions = [
-      "lambda:UpdateFunctionCode",
-      "lambda:GetFunction",
-      "lambda:PublishVersion",
-      "lambda:UpdateFunctionConfiguration",
-    ]
-    resources = ["arn:aws:lambda:${data.aws_region.current.name}:${local.account_id}:function:${local.suffix}-webhook"]
-  }
-
-  statement {
-    sid       = "EC2ASG"
-    effect    = "Allow"
-    actions   = ["ec2:DescribeInstances", "autoscaling:*"]
-    resources = ["*"]
-  }
-}
-
-resource "aws_iam_role_policy" "gha_policy" {
-  name   = "${local.suffix}-gha-inline"
-  role   = aws_iam_role.github_actions.id
-  policy = data.aws_iam_policy_document.gha_policy.json
 }

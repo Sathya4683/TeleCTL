@@ -1,5 +1,5 @@
 # Media bucket — stores downloaded attachments and rendered outputs.
-# Public access blocked (write/read via IAM only); short lifecycle so we
+# Public access blocked (read/write via IAM only); short lifecycle so we
 # don't accumulate stale jobs.
 resource "aws_s3_bucket" "media" {
   bucket        = "${local.suffix}-media-${local.account_id}"
@@ -40,7 +40,9 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "media" {
   }
 }
 
-# Releases bucket — holds worker.tar.gz + tf state (called by CI).
+# Releases bucket — holds worker.tar.gz that the EC2 cloud-init pulls
+# on first boot. SSE on by default; no lifecycle (artefacts are tiny
+# and rotated by CI upload + overwrite, not by S3 expiry).
 resource "aws_s3_bucket" "releases" {
   bucket        = "${local.suffix}-releases-${local.account_id}"
   force_destroy = false
@@ -57,16 +59,12 @@ resource "aws_s3_bucket_public_access_block" "releases" {
   restrict_public_buckets = true
 }
 
-resource "aws_s3_bucket_lifecycle_configuration" "releases" {
+resource "aws_s3_bucket_server_side_encryption_configuration" "releases" {
   bucket = aws_s3_bucket.releases.id
 
   rule {
-    id     = "keep-latest-50"
-    status = "Enabled"
-
-    noncurrent_version_expiration {
-      noncurrent_days = 30
+    apply_server_side_encryption_by_default {
+      sse_algorithm = "AES256"
     }
-    abort_incomplete_multipart_upload_days = 7
   }
 }

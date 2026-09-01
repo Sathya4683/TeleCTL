@@ -1,6 +1,7 @@
-# Single-table dedup record. Keyed on the Meta WAMID (the unique message ID).
-# TTL drops stale rows automatically after 7 days — matches Meta's retry
-# window so we never re-process a message that's beyond the API's interest.
+# Single-table dedup record. Keyed on Telegram message_id.
+# TTL drops stale rows after 7 days — well beyond any plausible retry
+# window for Telegram (which doesn't auto-retry at all, but we keep
+# the TTL for safety against duplicate deliveries).
 resource "aws_dynamodb_table" "dedup" {
   name         = "${local.suffix}-dedup"
   billing_mode = "PAY_PER_REQUEST"
@@ -14,10 +15,6 @@ resource "aws_dynamodb_table" "dedup" {
   ttl {
     attribute_name = "expires_at"
     enabled        = true
-  }
-
-  point_in_time_recovery {
-    enabled = true
   }
 
   tags = local.tags

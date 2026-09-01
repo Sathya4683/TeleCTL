@@ -23,4 +23,4 @@ docker cp wactl-worker-extract:/worker.tar.gz.sha256 dist/worker.tar.gz.sha256
 docker rm wactl-worker-extract >/dev/null
 
 echo "[build_worker] Built dist/worker.tar.gz ($(du -h dist/worker.tar.gz | cut -f1))"
-sha256sum -c dist/worker.tar.gz.sha256
+(cd dist && sha256sum -c worker.tar.gz.sha256)

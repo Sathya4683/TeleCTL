@@ -12,7 +12,9 @@ from wactl.exceptions import UserInputError
 
 
 @pytest.mark.asyncio
-async def test_image_compress_uses_recompress(monkeypatch: pytest.MonkeyPatch, fake_whatsapp) -> None:
+async def test_image_compress_uses_recompress(
+    monkeypatch: pytest.MonkeyPatch, fake_telegram
+) -> None:
     """Default recompress path is invoked with quality=75."""
     called: dict[str, object] = {"resize_called": False}
 
@@ -35,8 +37,8 @@ async def test_image_compress_uses_recompress(monkeypatch: pytest.MonkeyPatch, f
         fake_rac,
     )
     monkeypatch.setattr(
-        "wactl.integrations.whatsapp.messages.send_image",
-        AsyncMock(return_value="wamid.OUT"),
+        "wactl.integrations.telegram.messages.send_photo",
+        AsyncMock(return_value="999"),
     )
     monkeypatch.setattr(
         "wactl.commands.image_compress.s3.put_object",
@@ -51,7 +53,7 @@ async def test_image_compress_uses_recompress(monkeypatch: pytest.MonkeyPatch, f
         media_bytes=b"orig",
         media_mime_type="image/jpeg",
         args="",
-        whatsapp=fake_whatsapp,
+        telegram=fake_telegram,
     )
     resp = await cmd_image_compress.ImageCompressCommand().run(ctx)
 
@@ -64,7 +66,9 @@ async def test_image_compress_uses_recompress(monkeypatch: pytest.MonkeyPatch, f
 
 
 @pytest.mark.asyncio
-async def test_image_compress_with_max_width(monkeypatch: pytest.MonkeyPatch, fake_whatsapp) -> None:
+async def test_image_compress_with_max_width(
+    monkeypatch: pytest.MonkeyPatch, fake_telegram
+) -> None:
     """``max=1600`` triggers resize_and_compress path."""
     called: dict[str, object] = {}
 
@@ -83,8 +87,8 @@ async def test_image_compress_with_max_width(monkeypatch: pytest.MonkeyPatch, fa
         lambda *_a, **_kw: called.update({"recompress_called": True}) or b"",
     )
     monkeypatch.setattr(
-        "wactl.integrations.whatsapp.messages.send_image",
-        AsyncMock(return_value="wamid.OUT"),
+        "wactl.integrations.telegram.messages.send_photo",
+        AsyncMock(return_value="999"),
     )
     monkeypatch.setattr(
         "wactl.commands.image_compress.s3.put_object",
@@ -99,7 +103,7 @@ async def test_image_compress_with_max_width(monkeypatch: pytest.MonkeyPatch, fa
         media_bytes=b"x",
         media_mime_type="image/jpeg",
         args="q=60 max=1600",
-        whatsapp=fake_whatsapp,
+        telegram=fake_telegram,
     )
     resp = await cmd_image_compress.ImageCompressCommand().run(ctx)
 
@@ -110,19 +114,19 @@ async def test_image_compress_with_max_width(monkeypatch: pytest.MonkeyPatch, fa
 
 
 @pytest.mark.asyncio
-async def test_image_compress_requires_media(fake_whatsapp) -> None:
-    ctx = make_context(media_bytes=None, whatsapp=fake_whatsapp)
+async def test_image_compress_requires_media(fake_telegram) -> None:
+    ctx = make_context(media_bytes=None, telegram=fake_telegram)
     with pytest.raises(UserInputError):
         await cmd_image_compress.ImageCompressCommand().run(ctx)
 
 
 @pytest.mark.asyncio
-async def test_image_compress_rejects_garbage(fake_whatsapp) -> None:
+async def test_image_compress_rejects_garbage(fake_telegram) -> None:
     ctx = make_context(
         media_bytes=b"x",
         media_mime_type="image/jpeg",
         args="not-a-flag",
-        whatsapp=fake_whatsapp,
+        telegram=fake_telegram,
     )
     with pytest.raises(UserInputError):
         await cmd_image_compress.ImageCompressCommand().run(ctx)

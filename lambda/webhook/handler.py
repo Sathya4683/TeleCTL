@@ -1,17 +1,21 @@
-"""AWS Lambda entry point for the WhatsApp webhook.
+"""AWS Lambda entry point for the Telegram webhook.
 
 This file is intentionally tiny — everything lives in
 :mod:`wactl.webhook`. The handler is the only stable contract between
 API Gateway + this codebase.
 
-Lambda event shape (API Gateway REST proxy):
+Lambda event shape (API Gateway HTTP API v2 proxy, ``payload_format_version = "2.0"``):
 
     {
-        "httpMethod": "POST",
-        "headers": {"X-Hub-Signature-256": "sha256=...", ...},
+        "version": "2.0",
+        "requestContext": {"http": {"method": "POST"}, ...},
+        "headers": {"x-telegram-bot-api-secret-token": "...", ...},
         "body": "<raw webhook JSON>",
         "isBase64Encoded": false
     }
+
+For HTTP API v2 the body always arrives in ``event["body"]`` (string for
+JSON payloads, base64-encoded only if the content type is binary).
 """
 
 from __future__ import annotations

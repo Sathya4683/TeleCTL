@@ -15,7 +15,7 @@ from wactl.exceptions import UserInputError
 from wactl.integrations.aws import s3
 
 if TYPE_CHECKING:
-    from wactl.integrations.whatsapp.client import WhatsAppClient
+    from wactl.integrations.telegram.client import TelegramClient
 
 
 def media_bucket(ctx: CommandContext) -> str:
@@ -29,7 +29,9 @@ def media_bucket(ctx: CommandContext) -> str:
 
 def output_key(ctx: CommandContext, suffix: str) -> str:
     """Build a deterministic S3 key for an outbound artifact."""
-    safe_user = ctx.user.phone[-10:]  # last 10 digits, no PII leak
+    # Last 10 digits of the chat_id — same shape as the old phone-based key,
+    # so existing objects in the bucket (if any) remain locatable.
+    safe_user = str(ctx.user.chat_id)[-10:]
     return s3.make_key("out", safe_user, f"{ctx.user.message_id}{suffix}")
 
 
@@ -46,20 +48,20 @@ def suggest_filename(ctx: CommandContext, suffix: str, *, default: str | None = 
     return name
 
 
-def require_whatsapp(ctx: CommandContext) -> WhatsAppClient:
-    """Return the WhatsApp client or raise a user-facing :class:`UserInputError`.
+def require_telegram(ctx: CommandContext) -> TelegramClient:
+    """Return the Telegram client or raise a user-facing :class:`UserInputError`.
 
-    The dispatcher populates ``ctx.whatsapp`` for every command that
+    The dispatcher populates ``ctx.telegram`` for every command that
     sends a reply. If it's missing the deployment is misconfigured
     and we surface a friendly message rather than letting ``send_*``
     raise a confusing TypeError.
     """
-    if ctx.whatsapp is None:
+    if ctx.telegram is None:
         raise UserInputError(
-            "WhatsApp client missing from context",
+            "Telegram client missing from context",
             user_message="Service is misconfigured. Please try again later.",
         )
-    return ctx.whatsapp
+    return ctx.telegram
 
 
-__all__ = ["media_bucket", "output_key", "require_whatsapp", "suggest_filename"]
+__all__ = ["media_bucket", "output_key", "require_telegram", "suggest_filename"]

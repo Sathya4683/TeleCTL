@@ -1,0 +1,17 @@
+{
+  "update_id": 100003,
+  "message": {
+    "message_id": 103,
+    "from": {"id": 1001, "is_bot": false, "first_name": "Alice"},
+    "chat": {"id": 1001, "type": "private", "first_name": "Alice"},
+    "date": 1700000000,
+    "caption": "/pdf-docx",
+    "document": {
+      "file_id": "DOC123",
+      "file_unique_id": "u3",
+      "file_name": "report.pdf",
+      "mime_type": "application/pdf",
+      "file_size": 123456
+    }
+  }
+}

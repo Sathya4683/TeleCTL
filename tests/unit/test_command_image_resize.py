@@ -12,7 +12,7 @@ from wactl.exceptions import UserInputError
 
 
 @pytest.mark.asyncio
-async def test_image_resize_runs_pipeline(monkeypatch: pytest.MonkeyPatch, fake_whatsapp) -> None:
+async def test_image_resize_runs_pipeline(monkeypatch: pytest.MonkeyPatch, fake_telegram) -> None:
     """Image bytes → resize → upload → image reply."""
     called: dict[str, object] = {}
 
@@ -30,10 +30,10 @@ async def test_image_resize_runs_pipeline(monkeypatch: pytest.MonkeyPatch, fake_
 
     async def _capture_send(*_a, **kw):
         called["send_kwargs"] = kw
-        return "wamid.OUT"
+        return "999"
 
     monkeypatch.setattr(
-        "wactl.integrations.whatsapp.messages.send_image",
+        "wactl.integrations.telegram.messages.send_photo",
         _capture_send,
     )
     monkeypatch.setattr(
@@ -49,21 +49,25 @@ async def test_image_resize_runs_pipeline(monkeypatch: pytest.MonkeyPatch, fake_
         media_bytes=b"original-png",
         media_mime_type="image/png",
         args="800x600",
-        whatsapp=fake_whatsapp,
+        telegram=fake_telegram,
     )
     resp = await cmd_image_resize.ImageResizeCommand().run(ctx)
 
     assert resp.success
-    assert resp.message_id == "wamid.OUT"
+    assert resp.message_id == "999"
     assert called["resize_input"] == b"original-png"
     assert called["width"] == 800
     assert called["height"] == 600
     assert called["send_kwargs"]["link"] == "https://signed.example/img"
     assert called["send_kwargs"]["caption"] == "Resized to 800x600"
+    # Reply targets the user's chat_id, not a phone number.
+    assert called["send_kwargs"]["chat_id"] == 111111111
 
 
 @pytest.mark.asyncio
-async def test_image_resize_accepts_single_dimension(monkeypatch: pytest.MonkeyPatch, fake_whatsapp) -> None:
+async def test_image_resize_accepts_single_dimension(
+    monkeypatch: pytest.MonkeyPatch, fake_telegram
+) -> None:
     """``1024`` (width only) parses correctly."""
     called: dict[str, object] = {}
 
@@ -77,8 +81,8 @@ async def test_image_resize_accepts_single_dimension(monkeypatch: pytest.MonkeyP
         fake_resize,
     )
     monkeypatch.setattr(
-        "wactl.integrations.whatsapp.messages.send_image",
-        AsyncMock(return_value="wamid.OUT"),
+        "wactl.integrations.telegram.messages.send_photo",
+        AsyncMock(return_value="999"),
     )
     monkeypatch.setattr(
         "wactl.commands.image_resize.s3.put_object",
@@ -93,7 +97,7 @@ async def test_image_resize_accepts_single_dimension(monkeypatch: pytest.MonkeyP
         media_bytes=b"x",
         media_mime_type="image/jpeg",
         args="1024",
-        whatsapp=fake_whatsapp,
+        telegram=fake_telegram,
     )
     resp = await cmd_image_resize.ImageResizeCommand().run(ctx)
     assert resp.success
@@ -102,19 +106,19 @@ async def test_image_resize_accepts_single_dimension(monkeypatch: pytest.MonkeyP
 
 
 @pytest.mark.asyncio
-async def test_image_resize_requires_media(fake_whatsapp) -> None:
-    ctx = make_context(media_bytes=None, whatsapp=fake_whatsapp)
+async def test_image_resize_requires_media(fake_telegram) -> None:
+    ctx = make_context(media_bytes=None, telegram=fake_telegram)
     with pytest.raises(UserInputError):
         await cmd_image_resize.ImageResizeCommand().run(ctx)
 
 
 @pytest.mark.asyncio
-async def test_image_resize_requires_size(fake_whatsapp) -> None:
+async def test_image_resize_requires_size(fake_telegram) -> None:
     ctx = make_context(
         media_bytes=b"x",
         media_mime_type="image/png",
         args="",
-        whatsapp=fake_whatsapp,
+        telegram=fake_telegram,
     )
     with pytest.raises(UserInputError):
         await cmd_image_resize.ImageResizeCommand().run(ctx)

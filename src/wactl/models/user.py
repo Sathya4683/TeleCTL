@@ -8,20 +8,22 @@ from pydantic import BaseModel, ConfigDict
 class UserContext(BaseModel):
     """Who is the message from, and where do we reply to?
 
-    Constructed by the parser from the webhook envelope. Carried into the
-    command's :class:`CommandContext` so commands never need to re-parse.
+    Constructed by the parser from the Telegram Update envelope. Carried into
+    the command's :class:`CommandContext` so commands never need to re-parse.
+
+    For Telegram, ``chat_id`` is the bot's reply target — an integer that
+    uniquely identifies the chat (private chats use the user's id).
     """
 
     model_config = ConfigDict(frozen=True)
 
-    phone: str  # E.164 without "+", e.g. "16505551234"
-    name: str | None  # WhatsApp profile name, may be empty
-    message_id: str  # wamid...; used for dedup + reply context
-    waba_id: str  # the WhatsApp Business Account id
-    phone_number_id: str  # which of our phone numbers received it
+    chat_id: int
+    username: str | None = None
+    first_name: str | None = None
+    message_id: int
 
     def __str__(self) -> str:  # pragma: no cover — cosmetic
-        return f"User(phone={self.phone!r}, name={self.name!r})"
+        return f"User(chat_id={self.chat_id!r}, first_name={self.first_name!r})"
 
 
 __all__ = ["UserContext"]

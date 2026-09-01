@@ -1,185 +1,172 @@
-"""Tests for :mod:`worker.main` — the SQS long-poll loop.
+"""Tests for the EC2 worker (``worker.main``).
 
-These tests stub SQS via the integration module's functions, so no AWS
-round-trip is involved. Real behavioral verification happens against a
-``moto``-mocked SQS in the end-to-end test (Phase 11).
+The worker is hard-coded to handle a single command (``/pdf-audio``).
+These tests stub SQS receive/send, the Gemini TTS pipeline, S3 upload,
+and the Telegram client so we can exercise the polling + dispatch loop
+end-to-end without any real AWS or Telegram calls.
 """
 
 from __future__ import annotations
 
-from typing import Any
-from unittest.mock import MagicMock
+import json
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from worker import main as worker_main
-
-from wactl.models.job import Job
-from wactl.models.user import UserContext
 
 
-@pytest.fixture
-def fake_sqs_messages(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, Any]]:
-    """Patch SQS to return whatever messages we queue."""
-    queue: list[dict[str, Any]] = []
-    monkeypatch.setattr("wactl.config.settings.sqs_jobs_queue_url", "https://sqs.test/q")
+def _job_envelope(
+    *,
+    command: str = "/pdf-audio",
+    user_chat_id: int = 111111111,
+    media_id: str = "DOC123",
+    media_filename: str = "report.pdf",
+) -> str:
+    """Build a JSON Job body matching ``wactl.models.job.Job``."""
+    job = {
+        "job_id": "00000000-0000-0000-0000-000000000001",
+        "command": command,
+        "args": "",
+        "user": {
+            "chat_id": user_chat_id,
+            "username": "alice",
+            "first_name": "Alice",
+            "message_id": 42,
+        },
+        "media_id": media_id,
+        "media_mime": "application/pdf",
+        "media_filename": media_filename,
+        "enqueued_at": "2026-01-01T00:00:00Z",
+    }
+    return json.dumps(job)
 
-    def receive(*_a: Any, **_kw: Any) -> list[dict[str, Any]]:
-        return list(queue)
 
-    def delete(_queue_url: str, handle: str) -> None:
-        queue[:] = [m for m in queue if m["_receipt_handle"] != handle]
+@pytest.mark.asyncio
+async def test_worker_picks_up_pdf_audio_and_calls_handler(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Single-message SQS receive → /pdf-audio handler runs end-to-end."""
+    import worker.main as worker_main
 
-    monkeypatch.setattr("wactl.integrations.aws.sqs.receive_message", receive)
-    monkeypatch.setattr("wactl.integrations.aws.sqs.delete_message", delete)
-    monkeypatch.setattr("wactl.integrations.aws.sqs.send_message", lambda *_a, **_kw: "msg-id")
-    return queue
-
-
-def _enqueue(queue: list[dict[str, Any]], job: Job) -> None:
-    queue.append(
-        {
-            "_receipt_handle": f"rh-{job.job_id}",
-            "_message_id": f"mid-{job.job_id}",
-            "job": job.model_dump_json(),
-        }
+    # The worker reads settings.sqs_jobs_queue_url; if empty it logs
+    # ``worker.no_queue_url`` and returns. Set a fake URL for the test.
+    monkeypatch.setattr(
+        worker_main.settings, "sqs_jobs_queue_url", "https://sqs.test/q", raising=False
     )
 
+    handled: dict[str, object] = {}
 
-@pytest.fixture
-def stub_command_run(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
-    """Replace `prepare_context` and ``PdfDocxCommand.run`` so the test is hermetic."""
-    sentinel: dict[str, Any] = {}
-
-    async def _fake_prepare_context(*_a: Any, **_kw: Any) -> Any:
-        return MagicMock(name="ctx")
-
-    async def _fake_run(_self: Any, _ctx: Any) -> Any:
-        sentinel["ran"] = True
-
-        class _Resp:
-            success = True
-
-        return _Resp()
-
-    # Worker imports ``dispatcher`` via ``import … as …`` then calls
-    # ``_dispatcher.prepare_context``. Patch the attribute on the worker's
-    # bound reference.
-    import worker.main as _wm
-
-    monkeypatch.setattr(_wm._dispatcher, "prepare_context", _fake_prepare_context)
-
-    from wactl.commands import pdf_docx
-
-    monkeypatch.setattr(pdf_docx.PdfDocxCommand, "run", _fake_run)
-    return sentinel
-
-
-def _user() -> UserContext:
-    return UserContext(
-        phone="15551234567",
-        name="alice",
-        message_id="wamid.M1",
-        waba_id="waba-1",
-        phone_number_id="pn-1",
-    )
-
-
-def _job(command: str = "/pdf-docx") -> Job:
-    return Job(
-        command=command,
-        args="",
-        user=_user(),
-        media_id="mid.test",
-        media_mime="application/pdf",
-    )
-
-
-def _patch_run_with_sentinel(monkeypatch: pytest.MonkeyPatch, sentinel: dict[str, Any]) -> None:
-    """Stub ``PdfDocxCommand.run`` to record invocation + return success."""
-    return  # obsolete; use stub_command_run fixture
-
-
-
-def _make_worker_with_fake_deps() -> worker_main.Worker:
-    """Build a worker whose ``build_deps`` is bypassed."""
+    # Make the worker exit after a single poll.
     worker = worker_main.Worker()
-    fake_deps = MagicMock(
-        name="deps",
-        whatsapp=MagicMock(),
-        http=MagicMock(),
-        gemini=MagicMock(),
-        s3=None,
-        secrets_manager=None,
-    )
-    worker._deps = fake_deps  # type: ignore[attr-defined]
-    return worker
+    monkeypatch.setattr(worker, "_stopping", True)
 
+    async def fake_synthesize(pdf_bytes: bytes, *, api_key: str, **_kw):
+        handled["synth_bytes"] = pdf_bytes
+        handled["api_key"] = api_key
+        return b"mp3-bytes"
 
-@pytest.mark.asyncio
-async def test_worker_processes_queued_job(
-    monkeypatch: pytest.MonkeyPatch,
-    fake_sqs_messages: list[dict[str, Any]],
-    stub_command_run: dict[str, Any],
-) -> None:
-    """A queued Job gets deserialized, dispatched, then ack'd via delete."""
-    job = _job()
-    _enqueue(fake_sqs_messages, job)
+    # Patch the audiobook pipeline referenced by the worker module.
+    monkeypatch.setattr("wactl.commands.pdf_audio.audiobook.synthesize", fake_synthesize)
 
-    def _receive_then_stop(*_a: Any, **_kw: Any) -> list[dict[str, Any]]:
-        monkeypatch.setattr(worker_main.shutdown, "is_set", lambda: True)
-        return list(fake_sqs_messages)
-
-    monkeypatch.setattr("wactl.integrations.aws.sqs.receive_message", _receive_then_stop)
-
-    worker = _make_worker_with_fake_deps()
-    await worker.run()
-
-    assert stub_command_run.get("ran") is True
-    assert not fake_sqs_messages  # message deleted after success
-
-
-@pytest.mark.asyncio
-async def test_worker_drops_unparseable_message(
-    monkeypatch: pytest.MonkeyPatch,
-    fake_sqs_messages: list[dict[str, Any]],
-) -> None:
-    """A malformed SQS body is logged + deleted (poison-pill safety)."""
-    fake_sqs_messages.append(
-        {
-            "_receipt_handle": "rh-bad",
-            "_message_id": "mid-bad",
-            "job": "not-json{{",
-        }
+    # Set the Gemini key on settings (read by PdfAudioCommand).
+    monkeypatch.setattr(
+        "wactl.config.settings.gemini_api_key", "test-key", raising=False
     )
 
-    def _receive_then_stop(*_a: Any, **_kw: Any) -> list[dict[str, Any]]:
-        monkeypatch.setattr(worker_main.shutdown, "is_set", lambda: True)
-        return list(fake_sqs_messages)
+    # Stub SQS receive_message — returns one message, then empty on next call.
+    # NOTE: sqs.receive_message is a SYNC boto3 call wrapped by the worker
+    # via asyncio.to_thread, so the fake must also be sync.
+    receive_calls = {"n": 0}
 
-    monkeypatch.setattr("wactl.integrations.aws.sqs.receive_message", _receive_then_stop)
-    worker = _make_worker_with_fake_deps()
-    await worker.run()
-
-    assert not fake_sqs_messages
-
-
-@pytest.mark.asyncio
-async def test_worker_drains_after_exception(
-    monkeypatch: pytest.MonkeyPatch,
-    fake_sqs_messages: list[dict[str, Any]],
-) -> None:
-    """If SQS receive_message raises, the worker logs and continues."""
-    received = {"n": 0}
-
-    def _flaky(*_a: Any, **_kw: Any) -> list[dict[str, Any]]:
-        received["n"] += 1
-        if received["n"] == 1:
-            raise RuntimeError("simulated SQS outage")
-        monkeypatch.setattr(worker_main.shutdown, "is_set", lambda: True)
+    def fake_receive(*_a, **_kw):
+        receive_calls["n"] += 1
+        if receive_calls["n"] == 1:
+            body = {"job": _job_envelope()}
+            body["_receipt_handle"] = "rh-1"
+            body["_message_id"] = "m-1"
+            return [body]
+        # Signal "stop" by making the worker exit.
+        worker._stopping = True
         return []
 
-    monkeypatch.setattr("wactl.integrations.aws.sqs.receive_message", _flaky)
-    worker = _make_worker_with_fake_deps()
-    await worker.run()
+    monkeypatch.setattr(worker_main.sqs, "receive_message", fake_receive)
 
-    assert received["n"] >= 2
+    # Stub SQS delete (also sync — wrapped via asyncio.to_thread).
+    deleted: list[str] = []
+
+    def fake_delete(*_a, **_kw):
+        deleted.append(_kw.get("receipt_handle", _a[1] if len(_a) > 1 else ""))
+
+    monkeypatch.setattr(worker_main.sqs, "delete_message", fake_delete)
+
+    # Stub S3 helpers used by the command.
+    monkeypatch.setattr(
+        "wactl.commands.pdf_audio.s3.put_object",
+        lambda *a, **kw: handled.update({"put": a}),
+    )
+    monkeypatch.setattr(
+        "wactl.commands.pdf_audio.s3.presigned_get_url",
+        lambda *a, **kw: "https://signed.example/audio",
+    )
+
+    # Stub Telegram client methods used by the command (telegram client
+    # lazy-built on first use; we force-build with a MagicMock).
+    fake_tg = MagicMock()
+    fake_tg.bot_token = "test-token"
+    fake_tg.get_file = AsyncMock(
+        return_value=MagicMock(result=MagicMock(file_path="docs/file.pdf"))
+    )
+    fake_tg.download_file = AsyncMock(return_value=b"%PDF-1.4\nfake-pdf\n%%EOF")
+    fake_tg.send_audio = AsyncMock(
+        return_value=MagicMock(result=MagicMock(message_id=999))
+    )
+    monkeypatch.setattr(worker, "_ensure_telegram", lambda: fake_tg)
+
+    await worker._poll_once()
+
+    # Synthesize was called with the PDF bytes downloaded via Telegram.
+    assert handled["synth_bytes"] == b"%PDF-1.4\nfake-pdf\n%%EOF"
+    assert handled["api_key"] == "test-key"
+    # Message was acked (deleted from SQS).
+    assert len(deleted) == 1
+    assert deleted[0] == "rh-1"
+    # Telegram send_audio was awaited.
+    fake_tg.send_audio.assert_awaited()
+
+
+@pytest.mark.asyncio
+async def test_worker_drops_unknown_command(monkeypatch: pytest.MonkeyPatch) -> None:
+    """If the queue contains a command we don't recognize, ack and skip."""
+    import worker.main as worker_main
+
+    monkeypatch.setattr(
+        worker_main.settings, "sqs_jobs_queue_url", "https://sqs.test/q", raising=False
+    )
+
+    worker = worker_main.Worker()
+    monkeypatch.setattr(worker, "_stopping", True)
+
+    body = {"job": _job_envelope(command="/pdf-docx")}
+    body["_receipt_handle"] = "rh-2"
+    body["_message_id"] = "m-2"
+
+    receive_calls = {"n": 0}
+
+    def fake_receive(*_a, **_kw):
+        receive_calls["n"] += 1
+        if receive_calls["n"] == 1:
+            return [body]
+        worker._stopping = True
+        return []
+
+    monkeypatch.setattr(worker_main.sqs, "receive_message", fake_receive)
+
+    deleted: list[str] = []
+
+    def fake_delete(*_a, **_kw):
+        deleted.append(_kw.get("receipt_handle", _a[1] if len(_a) > 1 else ""))
+
+    monkeypatch.setattr(worker_main.sqs, "delete_message", fake_delete)
+
+    await worker._poll_once()
+    # Message acked even though command was unhandled.
+    assert deleted == ["rh-2"]

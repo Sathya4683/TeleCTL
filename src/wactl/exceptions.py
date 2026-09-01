@@ -77,7 +77,7 @@ class WebhookError(WactlError):
 
 
 class SignatureVerificationError(WebhookError):
-    """HMAC-SHA256 signature on a webhook is invalid."""
+    """Webhook header verification failed (e.g. ``X-Telegram-Bot-Api-Secret-Token`` mismatch)."""
 
     user_message = ""
     retryable = False
@@ -135,14 +135,14 @@ class AWSIntegrationError(IntegrationError):
     retryable = True
 
 
-class WhatsAppAPIError(IntegrationError):
-    """The Meta WhatsApp Cloud API returned an error response.
+class TelegramAPIError(IntegrationError):
+    """The Telegram Bot API returned ``ok=false`` or an HTTP failure.
 
-    Carries the upstream error code for diagnostics. ``code 130429`` (rate
-    limit) and ``code 190`` (token expired) get special handling.
+    Carries the upstream error code for diagnostics. Telegram rate limits
+    (HTTP 429) and bad-token responses get special handling.
     """
 
-    user_message = "We couldn't reach WhatsApp. Please try again."
+    user_message = "We couldn't reach Telegram. Please try again."
     retryable = True
 
     def __init__(
@@ -152,13 +152,11 @@ class WhatsAppAPIError(IntegrationError):
         user_message: str | None = None,
         retryable: bool | None = None,
         code: int | None = None,
-        fbtrace_id: str | None = None,
         status: int | None = None,
         **context: object,
     ) -> None:
         super().__init__(message, user_message=user_message, retryable=retryable, **context)
         self.code = code
-        self.fbtrace_id = fbtrace_id
         self.status = status
 
 
@@ -190,8 +188,8 @@ __all__ = [
     "ExternalAPIError",
     "IntegrationError",
     "SignatureVerificationError",
+    "TelegramAPIError",
     "UserInputError",
     "WactlError",
     "WebhookError",
-    "WhatsAppAPIError",
 ]

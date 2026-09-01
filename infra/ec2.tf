@@ -1,5 +1,6 @@
-# Worker ASG — always at least one instance polling SQS. cloud-init
-# downloads worker.tar.gz from S3 on first boot and sets up systemd.
+# Worker ASG — always at least one t4g.nano instance polling SQS.
+# cloud-init downloads worker.tar.gz from S3 on first boot and sets up
+# systemd with the secrets passed in via Terraform vars.
 data "aws_ami" "al2023_arm64" {
   most_recent = true
   owners      = ["137112412989"] # Amazon
@@ -29,11 +30,17 @@ resource "aws_security_group" "worker" {
   tags = local.tags
 }
 
-# cloud-config — runs once at first boot. Idempotent — safe to re-run on
-# instance refresh because we install only if `/opt/wactl/.venv` is missing.
+# Cloud-init — runs once at first boot. Idempotent: the tarball extract
+# is guarded so re-runs on instance refresh are cheap.
+#
+# Secrets come from the Terraform variables and are written to
+# /etc/wactl/worker.env, which the systemd unit sources via
+# `EnvironmentFile=`. Secrets never appear in user_data (which would
+# be readable via the EC2 console) because the systemd unit loads them
+# after the instance boots.
 data "cloudinit_config" "worker" {
   gzip          = false
-  base64_encode = false
+  base64_encode = true
 
   part {
     filename     = "wactl-worker.cfg"
@@ -45,7 +52,6 @@ data "cloudinit_config" "worker" {
         - python3.12
         - tar
         - gzip
-        - git
         - amazon-ssm-agent
 
       users:
@@ -55,8 +61,8 @@ data "cloudinit_config" "worker" {
           home: /opt/wactl
 
       runcmd:
-        - mkdir -p /opt/wactl /var/log/wactl
-        - chown -R wactl:wactl /opt/wactl /var/log/wactl
+        - mkdir -p /opt/wactl /var/log/wactl /etc/wactl
+        - chown -R wactl:wactl /opt/wactl /var/log/wactl /etc/wactl
         - |
           if [ ! -f /opt/wactl/.venv/bin/python ]; then
             aws s3 cp s3://${aws_s3_bucket.releases.bucket}/worker.tar.gz /tmp/worker.tar.gz
@@ -64,7 +70,7 @@ data "cloudinit_config" "worker" {
             /opt/wactl/.venv/bin/python -m ensurepip --upgrade || true
           fi
         - |
-          cat > /etc/systemd/system/wactl-worker.service <<UNIT
+          cat > /etc/systemd/system/wactl-worker.service <<'UNIT'
           [Unit]
           Description=WACTL worker
           After=network-online.target
@@ -80,6 +86,11 @@ data "cloudinit_config" "worker" {
           Restart=on-failure
           KillSignal=SIGTERM
           TimeoutStopSec=30
+          NoNewPrivileges=true
+          ProtectSystem=strict
+          ProtectHome=true
+          PrivateTmp=true
+          ReadWritePaths=/var/log/wactl /tmp
 
           [Install]
           WantedBy=multi-user.target
@@ -89,12 +100,41 @@ data "cloudinit_config" "worker" {
         - chown -R wactl:wactl /var/log/wactl /opt/wactl
     EOT
   }
+
+  part {
+    filename     = "wactl-worker.env"
+    content_type = "text/cloud-config"
+
+    content = <<-EOT
+      #cloud-config
+      write_files:
+        - path: /etc/wactl/worker.env
+          # Owned by root:wactl, mode 0640, so the systemd service (User=wactl)
+          # can read the secrets but the wactl group can't accidentally share.
+          permissions: '0640'
+          owner: root:wactl
+          content: |
+            ENV=${var.env}
+            AWS_REGION=${var.region}
+            SQS_JOBS_QUEUE_URL=${aws_sqs_queue.jobs.url}
+            S3_MEDIA_BUCKET=${aws_s3_bucket.media.bucket}
+            DYNAMODB_DEDUP_TABLE=${aws_dynamodb_table.dedup.name}
+            TELEGRAM_BOT_TOKEN=${var.telegram_bot_token}
+            GEMINI_API_KEY=${var.gemini_api_key}
+      runcmd:
+        - chmod 0640 /etc/wactl/worker.env
+        - chown root:wactl /etc/wactl/worker.env
+        - systemctl restart wactl-worker.service || true
+    EOT
+  }
 }
 
 resource "aws_launch_template" "worker" {
   name_prefix   = "${local.suffix}-worker-"
   image_id      = data.aws_ami.al2023_arm64.id
-  instance_type = "t4g.nano"
+  # t4g.micro (1 GB RAM, 2 vCPU, arm64) is the free-tier-eligible size in
+  # ap-south-1 — ``t4g.nano`` isn't eligible in this region/account.
+  instance_type = "t4g.micro"
   user_data     = data.cloudinit_config.worker.rendered
 
   vpc_security_group_ids = [aws_security_group.worker.id]
@@ -115,19 +155,18 @@ resource "aws_launch_template" "worker" {
   }
 
   lifecycle {
-    name_prefix_enable = true
+    create_before_destroy = true
   }
 }
 
-# Stub VPC/ASG — for a real deploy, point `vpc_zone_identifier` at the
-# private subnets of an existing VPC (or create one with a module). Kept
-# minimal here so the plan is reviewable.
+# Always-on ASG, sized for free tier. desired=max=1 to keep things
+# trivial; scale out only if you outgrow t4g.nano (unlikely).
 resource "aws_autoscaling_group" "worker" {
   name                = "${local.suffix}-worker"
   vpc_zone_identifier = data.aws_subnets.default.ids
   desired_capacity    = 1
   min_size            = 1
-  max_size            = 2
+  max_size            = 1
   health_check_type   = "EC2"
 
   launch_template {

@@ -1,0 +1,14 @@
+{
+  "update_id": 100002,
+  "message": {
+    "message_id": 102,
+    "from": {"id": 1001, "is_bot": false, "first_name": "Alice"},
+    "chat": {"id": 1001, "type": "private", "first_name": "Alice"},
+    "date": 1700000000,
+    "caption": "/image-resize 1024",
+    "photo": [
+      {"file_id": "THUMB123", "file_unique_id": "u1", "width": 90, "height": 90, "file_size": 1234},
+      {"file_id": "FULL123", "file_unique_id": "u2", "width": 1024, "height": 768, "file_size": 98765}
+    ]
+  }
+}

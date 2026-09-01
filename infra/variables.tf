@@ -2,11 +2,6 @@ variable "env" {
   description = "Deployment environment: dev, staging, prod. Used as a name suffix."
   type        = string
   default     = "dev"
-
-  validation {
-    condition     = contains(["dev", "staging", "prod"], var.env)
-    error_message = "env must be one of dev, staging, prod."
-  }
 }
 
 variable "project_name" {
@@ -21,8 +16,37 @@ variable "region" {
   default     = "us-east-1"
 }
 
-variable "domain" {
-  description = "Public domain for the webhook URL (optional). Empty = API Gateway default URL."
+# ─── Telegram bot secrets ────────────────────────────────────────────
+# The bot stores these on the Lambda / EC2 instance as plain env vars
+# rather than SSM Parameter Store (simpler + free-tier friendly).
+# Pass them at apply time:
+#   terraform apply \
+#     -var "telegram_bot_token=123456:ABC..." \
+#     -var "gemini_api_key=AIza..." \
+#     -var "telegram_webhook_secret_token=$(openssl rand -hex 32)"
+variable "telegram_bot_token" {
+  description = "Telegram bot token from @BotFather. Empty = webhook Lambda will fail at startup."
   type        = string
+  sensitive   = true
   default     = ""
+}
+
+variable "telegram_webhook_secret_token" {
+  description = "Optional shared secret verified against X-Telegram-Bot-Api-Secret-Token header. Empty = no verification."
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
+variable "gemini_api_key" {
+  description = "Gemini API key for /pdf-audio TTS. Empty = the command will reject requests."
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
+variable "lambda_image_tag" {
+  description = "ECR image tag to use for the webhook Lambda container. Update this when you push a new image (e.g. \"latest\" or a git SHA)."
+  type        = string
+  default     = "latest"
 }
